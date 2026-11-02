@@ -10,6 +10,7 @@
     "db:migrate": "node --env-file-if-exists=.env backend/db/migrate.mjs",
     "db:seed": "node --env-file-if-exists=.env backend/db/seed.mjs",
     "db:crear-admin": "node --env-file-if-exists=.env backend/db/crear-admin.mjs",
+    "db:crear-asesor": "node --env-file-if-exists=.env backend/db/crear-admin.mjs --asesor",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },

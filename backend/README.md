@@ -65,12 +65,25 @@ El servidor reutiliza las cuentas y contraseñas conocidas de la demostración. 
 
 Las cuentas reales confirman su correo antes de ingresar. Recuperan la contraseña con un enlace, y quienes crea una Pyme o un asesor reciben una invitación para crear la suya; nunca se envían claves por correo.
 
-1. **Base propia.** Usa un proyecto de Supabase distinto del de la demo y ejecuta solo `npm run db:migrate`, que deja las comunas y los planes. **No ejecutes `db:seed` en esa base**: carga las cuentas demo con la clave `petsuite123`.
+Los comandos `npm run db:*` leen `.env`, que apunta a la base de la demo. Las conexiones de la base real van en `.env.production.local`, que Git ignora, y sus comandos se ejecutan indicando ese archivo:
+
+```powershell
+node --env-file=.env.production.local backend/db/migrate.mjs
+```
+
+1. **Base propia.** Usa un proyecto de Supabase distinto del de la demo y aplica solo las migraciones, que dejan las comunas y los planes. **No ejecutes `db:seed` en esa base**: carga las cuentas demo con la clave `petsuite123`.
 2. **Correo.** Crea una cuenta en [Resend](https://resend.com) y verifica tu dominio. Sin dominio verificado, Resend solo envía a tu propio correo. Define en el entorno del API:
    - `RESEND_API_KEY`: la clave de Resend.
    - `MAIL_FROM`: el remitente, por ejemplo `PetSuite <no-responder@tudominio.cl>`.
    - `APP_URL`: la dirección de la app que abren los enlaces, con barra final.
-3. **Primer administrador.** Ejecuta `npm run db:crear-admin -- tu@correo.cl Tu nombre`. El enlace para crear la contraseña aparece en la terminal y vence en 7 días.
+3. **Administrador y asesores.** No tienen registro público. Crea cada cuenta con `backend/db/crear-admin.mjs`, y agrega `--asesor` para un asesor:
+
+   ```powershell
+   node --env-file=.env.production.local backend/db/crear-admin.mjs tu@correo.cl Tu nombre
+   node --env-file=.env.production.local backend/db/crear-admin.mjs --asesor asesora@correo.cl Su nombre
+   ```
+
+   El enlace para crear la contraseña aparece en la terminal y vence en 7 días. El de un asesor se le entrega solo a esa persona. Define antes `APP_URL` en ese archivo, o el enlace apuntará a `localhost`.
 
 Con proveedor configurado, la bandeja de correos que ven el asesor y el administrador guarda cada mensaje sin el enlace de acceso. Si Resend falla al enviar un enlace, la solicitud responde 502 y no queda una cuenta a medias.
 

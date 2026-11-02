@@ -1,7 +1,8 @@
 // Cuentas reales sobre PostgreSQL (PGlite):
 // - envío con Resend (simulado con un fetch falso): el enlace viaja solo en el correo, la bandeja guarda una copia
 //   sin él, y si el envío falla el registro se deshace;
-// - primer administrador de una base sin cuentas demo, creado con npm run db:crear-admin.
+// - primer administrador de una base sin cuentas demo, creado con npm run db:crear-admin;
+// - asesores de esa misma base, creados con npm run db:crear-asesor.
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import test from 'node:test'
@@ -16,7 +17,8 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 const { createApi } = await import('./index.ts')
 const { pgliteDatabase } = await import('./pglite.ts')
 const { migrate } = await import('../db/migrate.mjs')
-const { crearAdmin } = await import('../db/crear-admin.mjs')
+const { crearAdmin, leerArgumentos } = await import('../db/crear-admin.mjs')
+const { PERMISOS_ASESOR } = await import('../../src/shared/permissions.ts')
 
 test('el primer administrador de una base vacía entra con su invitación, no con una clave conocida', async () => {
   const { database, client } = await pgliteDatabase()
@@ -34,6 +36,34 @@ test('el primer administrador de una base vacía entra con su invitación, no co
   } finally {
     await database.close()
   }
+})
+
+test('un asesor de la base real entra con su invitación y solo tiene los permisos de asesor', async () => {
+  const { database, client } = await pgliteDatabase()
+  try {
+    await migrate(client, () => {})
+    const enlace = await crearAdmin(client, 'asesora@petsuite.test', 'Asesora Real', 'https://petsuite.test/', 'asesor')
+    const invitacion = /#restablecer\/([0-9a-f]{32})$/.exec(enlace)[1]
+    const handle = createApi(database)
+    await assert.rejects(() => handle('POST', '/auth/login', { correo: 'asesora@petsuite.test', clave: 'petsuite123' }, null), e => e.status === 401)
+    await handle('POST', '/auth/restablecer', { token: invitacion, clave: 'una-clave-larga' }, null)
+    const { token, usuario } = await handle('POST', '/auth/login', { correo: 'asesora@petsuite.test', clave: 'una-clave-larga' }, null)
+    assert.equal(usuario.rol, 'asesor')
+    assert.deepEqual(usuario.permisos, PERMISOS_ASESOR)
+
+    const sesion = { token, id: '', rol: 'asesor', nombre: '', comunaId: null }
+    const cuenta = await handle('POST', '/asesor/cuentas', { tipo: 'pyme', correo: 'negocio@petsuite.test', nombre_visible: 'Negocio Real', comuna_id: 1 }, sesion)
+    assert.equal(cuenta.correo, 'negocio@petsuite.test')
+    await assert.rejects(() => handle('GET', '/admin/usuarios', undefined, sesion), e => e.status === 403)
+  } finally {
+    await database.close()
+  }
+})
+
+test('los comandos distinguen administrador y asesor', () => {
+  assert.deepEqual(leerArgumentos(['admin@petsuite.test', 'Equipo', 'PetSuite']), { rol: 'admin', correo: 'admin@petsuite.test', nombre: 'Equipo PetSuite' })
+  assert.deepEqual(leerArgumentos(['--asesor', 'asesora@petsuite.test', 'Asesora', 'Real']), { rol: 'asesor', correo: 'asesora@petsuite.test', nombre: 'Asesora Real' })
+  assert.deepEqual(leerArgumentos(['--asesor']), { rol: 'asesor', correo: undefined, nombre: '' })
 })
 
 const registro = correo => ({ correo, clave: 'secreta123', nombre_visible: 'Persona Real', comuna_id: 1, acepta_terminos: true, acepta_privacidad: true })
