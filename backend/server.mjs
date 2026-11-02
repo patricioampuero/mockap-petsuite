@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { registerHooks } from 'node:module'
+import { crearAtencion } from './http.mjs'
 
 registerHooks({ resolve(specifier, context, nextResolve) {
   if ((specifier.startsWith('./') || specifier.startsWith('../')) && !/\.[a-z]+$/i.test(specifier) && !context.parentURL?.includes('/node_modules/')) {
@@ -15,7 +16,6 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 
 // Acepta la versión vigente de la base demo (src/mock/db.ts STORAGE_KEY); las versiones antiguas se ignoran.
 const KEY = /^petsuite-mock-db-v\d+$/
-const MAX_BODY = 1_048_576
 
 function fileStorage(file) {
   let current = null
@@ -57,51 +57,7 @@ export async function createApiServer({
   database,
 } = {}) {
   const [{ handle, close }, { ApiError }] = await Promise.all([crearHandle(databaseUrl, file, database), import('../src/shared/errors.ts')])
-  const allowed = new Set(origins.split(',').map(value => value.trim()).filter(Boolean))
-  const respond = (res, status, payload) => {
-    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
-    res.end(JSON.stringify(payload))
-  }
-
-  const server = createServer(async (req, res) => {
-    const origin = req.headers.origin
-    if (origin && !allowed.has(origin)) { respond(res, 403, { message: 'Origen no autorizado' }); return }
-    if (origin) res.setHeader('Access-Control-Allow-Origin', origin)
-    res.setHeader('Vary', 'Origin')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
-    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
-
-    const url = new URL(req.url || '/', 'http://localhost')
-    if (url.pathname === '/healthz') { respond(res, 200, { ok: true }); return }
-    if (!url.pathname.startsWith('/api/v1/')) { respond(res, 404, { message: 'No encontrado' }); return }
-    try {
-      let body
-      if (req.method !== 'GET') {
-        let bytes = 0
-        const chunks = []
-        for await (const chunk of req) {
-          bytes += chunk.length
-          if (bytes > MAX_BODY) { respond(res, 413, { message: 'Solicitud demasiado grande' }); return }
-          chunks.push(chunk)
-        }
-        if (bytes) {
-          try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) }
-          catch { respond(res, 400, { message: 'JSON inválido' }); return }
-        }
-      }
-      const bearer = /^Bearer (\S+)$/i.exec(req.headers.authorization || '')
-      // handle() consulta la sesión persistida y comprueba el rol en cada ruta protegida.
-      const session = bearer ? { token: bearer[1], id: '', rol: 'tutor', nombre: '', comunaId: null } : null
-      const path = url.pathname.slice('/api/v1'.length) + url.search
-      const result = await handle(req.method || 'GET', path, body, session)
-      if (result === undefined) { res.writeHead(204, { 'Cache-Control': 'no-store' }); res.end() }
-      else respond(res, 200, result)
-    } catch (error) {
-      if (error instanceof ApiError) respond(res, error.status, { message: error.message })
-      else { console.error(error); respond(res, 500, { message: 'Error interno del servidor' }) }
-    }
-  })
+  const server = createServer(crearAtencion({ handle, ApiError, origins }))
   // Al cerrar el servidor se liberan las conexiones a la base.
   server.on('close', () => { close().catch(() => undefined) })
   return server

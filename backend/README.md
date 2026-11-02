@@ -85,6 +85,18 @@ node --env-file=.env.production.local backend/db/migrate.mjs
 
    El enlace para crear la contraseña aparece en la terminal y vence en 7 días. El de un asesor se le entrega solo a esa persona. Define antes `APP_URL` en ese archivo, o el enlace apuntará a `localhost`.
 
+### Publicar en Vercel
+
+El frontend y el API se publican juntos en un mismo proyecto de Vercel, así que comparten dirección y no hace falta configurar CORS. `vercel.json` ejecuta `npm run build:vercel`, que compila la app con `VITE_API_URL=/api/v1` y genera `.vercel/output`: los archivos del frontend y una función con todo el API, en São Paulo (`gru1`), la región de la base.
+
+1. En Vercel, importa este repositorio. No cambies los ajustes de compilación.
+2. En **Settings → Environment Variables**, agrega estas variables **solo para Production**, para que las vistas previas de los PR no usen la base real:
+   - `DATABASE_URL`: la cadena del Transaction pooler (puerto 6543).
+   - `RESEND_API_KEY` y `MAIL_FROM`.
+3. Publica y comprueba `https://<proyecto>.vercel.app/healthz` y `https://<proyecto>.vercel.app/api/v1/comunas`.
+
+`APP_URL` es opcional: si falta, se usa el dominio de producción del proyecto, y cambia solo al agregar un dominio propio. Cada fusión en `main` publica una versión nueva. GitHub Pages sigue siendo la demo con el mock.
+
 Con proveedor configurado, la bandeja de correos que ven el asesor y el administrador guarda cada mensaje sin el enlace de acceso. Si Resend falla al enviar un enlace, la solicitud responde 502 y no queda una cuenta a medias.
 
 Antes de abrir la versión real al público falta:
