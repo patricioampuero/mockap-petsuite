@@ -68,6 +68,23 @@ test('los comandos distinguen administrador y asesor', () => {
 
 const registro = correo => ({ correo, clave: 'secreta123', nombre_visible: 'Persona Real', comuna_id: 1, acepta_terminos: true, acepta_privacidad: true })
 
+test('la base trae las 30 comunas de la Región de Los Lagos y se puede registrar en cualquiera', async () => {
+  const { database, client } = await pgliteDatabase()
+  try {
+    await migrate(client, () => {})
+    const handle = createApi(database)
+    const comunas = await handle('GET', '/comunas', undefined, null)
+    assert.equal(comunas.length, 30)
+    assert.deepEqual(comunas.slice(0, 3).map(c => c.nombre), ['Ancud', 'Calbuco', 'Castro'])
+    assert.equal(comunas.find(c => c.nombre === 'Osorno').id, 1, 'las comunas existentes conservan su id')
+    const quellon = comunas.find(c => c.nombre === 'Quellón')
+    assert.deepEqual(await handle('POST', '/auth/registro', { ...registro('chiloe@petsuite.test'), comuna_id: quellon.id }, null), { verificacion_pendiente: true, correo: 'chiloe@petsuite.test' })
+    await assert.rejects(() => handle('POST', '/auth/registro', { ...registro('fuera@petsuite.test'), comuna_id: 31 }, null), e => e.status === 400)
+  } finally {
+    await database.close()
+  }
+})
+
 test('con Resend, el enlace viaja solo en el correo y un envío fallido deshace el registro', async () => {
   const { database, client } = await pgliteDatabase()
   const fetchOriginal = globalThis.fetch, errorOriginal = console.error

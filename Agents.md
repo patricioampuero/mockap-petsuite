@@ -848,3 +848,34 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - La revisión encontró un error: dentro del repositorio la función se cargaba como módulo ES. Ahora lleva su propio `package.json`, y la prueba empaqueta dentro del repositorio para detectarlo.
   - `git diff --check` correcto.
 - Pendiente: la publicación en Vercel no se probó, porque requiere la cuenta del usuario. Esa revisión queda para el primer despliegue.
+
+### Versión real publicada en Vercel
+
+- Fecha: 2026-11-01.
+- Archivos modificados: ninguno del código, solo esta bitácora. Es configuración del proyecto en Vercel.
+- Cambio realizado: la versión real quedó en https://mockap-petsuite.vercel.app, con `DATABASE_URL`, `RESEND_API_KEY` y `MAIL_FROM` en el entorno Production. La función corre en São Paulo (`gru1`).
+- Motivo: cerrar la revisión pendiente de RE-05 y RE-06.
+- Problema encontrado: el API respondía `ECONNREFUSED 127.0.0.1:5432` aunque la variable existía y había dos Redeploy. Ese error significa que `DATABASE_URL` llega vacía o no llega. Se resolvió volviendo a cargar el valor y haciendo otro Redeploy. Vercel solo entrega las variables a los despliegues creados después de guardarlas.
+- Verificación ejecutada:
+  - `/api/v1/comunas`, planes, Pymes y ONG responden 200 en unos 150 ms, y un QR inexistente, 404.
+  - En Chromium sobre el sitio publicado, a 1366 px en claro y 390 px en oscuro: landing, Explorar con estado vacío, Adopciones y Planes sin errores del servidor; ingreso sin botones demo, e ingreso inválido rechazado con su mensaje.
+  - La base real siguió con 0 usuarios y 0 correos.
+  - No se probó enviar correos: `MAIL_FROM` usa `resend.dev`, y sin un dominio verificado Resend solo envía al dueño de la cuenta.
+
+### Comunas de la Región de Los Lagos
+
+- Fecha: 2026-11-01.
+- Rama: `patricioampuero/re-comunas-los-lagos`.
+- Archivos agregados: `backend/db/migrations/005_comunas_los_lagos.sql`.
+- Archivos modificados: `src/mock/db.ts`, `backend/api/cuentas.test.mjs` y `AGENTS.md`.
+- Cambio realizado:
+  - La migración 005 agrega 27 comunas a las 3 existentes, que conservan su id: quedan las 30 de la Región de Los Lagos.
+  - El mock usa la misma lista y los mismos ids. Su clave sube a `petsuite-mock-db-v5` para que quien ya visitó la demo también las reciba, y se borra la v4.
+- Motivo: con solo 3 comunas, una persona de otra comuna de la zona no podía elegir la suya al registrarse. El usuario dejó la decisión a criterio de la implementación: se eligió la región donde parte PetSuite, y otra región se agrega con otra migración.
+- Verificación ejecutada:
+  - Nombres contrastados con [Región de Los Lagos en Wikipedia](https://es.wikipedia.org/wiki/Regi%C3%B3n_de_Los_Lagos): 30 comunas en 4 provincias.
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 41 de 41, con 1 prueba nueva: 30 comunas ordenadas, los ids existentes se conservan, se puede registrar en una comuna nueva y una inexistente responde 400. La paridad confirma que el mock y la base devuelven la misma lista.
+  - En Chromium sobre la build de Pages, a 1366 y 390 px en claro y oscuro: 30 comunas en la landing, Explorar y registro, filtro por «Río Negro» correcto, clave v4 borrada, sin errores de JavaScript ni desplazamiento horizontal.
+  - `git diff --check` correcto.
+- Pendiente: aplicar la migración en la base real después de fusionar esta rama, con `node --env-file=.env.production.local backend/db/migrate.mjs`.
