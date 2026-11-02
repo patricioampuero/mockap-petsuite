@@ -76,7 +76,8 @@ Estas reglas resumen errores que ya ocurrieron. Léelas antes de cada tarea.
 
 PetSuite dejó de ser solo una demostración. La demo, con el mock y la clave `petsuite123`, sigue en GitHub Pages; la versión real usa otra base.
 
-- La base real no tiene cuentas demo: nunca ejecutes `npm run db:seed` en ella. El primer administrador se crea con `npm run db:crear-admin`.
+- La base real no tiene cuentas demo: nunca ejecutes `npm run db:seed` en ella. El administrador y los asesores se crean con `backend/db/crear-admin.mjs` (`npm run db:crear-admin` y `npm run db:crear-asesor`).
+- `.env` apunta a la base de la demo y `npm run db:*` lo lee. La base real está en `.env.production.local`, que Git ignora, y sus comandos se ejecutan con `node --env-file=.env.production.local backend/db/<script>.mjs`.
 - Ninguna clave viaja por correo. Las cuentas que crea una Pyme o un asesor reciben una invitación para crear la suya.
 - Los enlaces de confirmación, recuperación e invitación sirven una sola vez, vencen y se guardan como SHA-256. Al enviarlos con `enviarCorreo`, pasa el enlace como `privado`: con Resend configurado, la bandeja guarda el correo sin él.
 - Reenviar la confirmación y recuperar la contraseña responden lo mismo exista o no la cuenta.
@@ -793,3 +794,34 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - El menú contraído mide 84 px y se mantiene al recargar.
   - Escape cierra el panel y devuelve el foco a ☰.
   - `git diff --check` correcto.
+
+## 2026-11-01
+
+### RE-01 · Base real nueva
+
+- Fecha: 2026-11-01.
+- Archivos modificados: ninguno. Es configuración: las conexiones están en `.env.production.local`, que Git ignora.
+- Cambio realizado:
+  - Se creó en Supabase un proyecto propio para la versión real, separado de la demo, en São Paulo (`sa-east-1`), la misma región de la demo.
+  - Se aplicaron las migraciones 001 a 004 con `node --env-file=.env.production.local backend/db/migrate.mjs`. No se ejecutó `db:seed`.
+- Motivo: la versión real necesita una base sin cuentas demo.
+- Verificación ejecutada: antes de migrar, conexión a PostgreSQL 17.11 con la base vacía y proyecto distinto al de la demo. Después, 37 tablas, ninguna sin RLS, 4 migraciones, 3 comunas, 4 planes y 0 usuarios, Pymes, mascotas, sesiones y correos. La segunda ejecución respondió «La base ya está al día».
+- Pendiente: la base trae solo 3 comunas (Osorno, Puerto Montt y Castro, de la migración 002); agregar más requiere una migración nueva. La conexión sigue con `sslmode=no-verify` hasta RE-03.
+
+### RE-02 · Cuentas de asesor en la base real
+
+- Fecha: 2026-11-01.
+- Rama: `patricioampuero/re-02-cuentas-asesor`.
+- Archivos modificados: `backend/db/crear-admin.mjs`, `backend/api/cuentas.test.mjs`, `backend/README.md`, `package.json` y `AGENTS.md`.
+- Cambio realizado:
+  - `backend/db/crear-admin.mjs` acepta `--asesor`, y el nuevo `npm run db:crear-asesor` lo usa. La cuenta nace igual que la del administrador: sin clave conocida y con una invitación de un solo uso que vence en 7 días.
+  - El README y las reglas de trabajo explican que `npm run db:*` lee `.env`, que apunta a la demo, y cómo ejecutar los comandos contra la base real.
+- Motivo: en la base real no había forma de crear asesores. El registro público admite tutor, Pyme y ONG; el asesor solo crea Pymes y ONG; y el comando existente solo creaba administradores. Sin asesores nadie puede validar negocios.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 36 de 36, con 2 pruebas nuevas sobre PGlite:
+    - El asesor no entra con la clave demo, entra con su invitación, recibe solo los permisos de asesor, puede crear una cuenta de Pyme y `/admin/usuarios` le responde 403.
+    - Los argumentos distinguen administrador y asesor.
+  - Sin datos, cada comando muestra su propio mensaje de uso y termina sin conectarse a la base.
+  - No se creó ninguna cuenta en la base real: falta definir `APP_URL` para que el enlace apunte a la versión publicada.
+  - `git diff --check` correcto. No cambia la interfaz.
