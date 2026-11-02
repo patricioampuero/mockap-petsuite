@@ -78,6 +78,7 @@ PetSuite dejó de ser solo una demostración. La demo, con el mock y la clave `p
 
 - La base real no tiene cuentas demo: nunca ejecutes `npm run db:seed` en ella. El administrador y los asesores se crean con `backend/db/crear-admin.mjs` (`npm run db:crear-admin` y `npm run db:crear-asesor`).
 - `.env` apunta a la base de la demo y `npm run db:*` lo lee. La base real está en `.env.production.local`, que Git ignora, y sus comandos se ejecutan con `node --env-file=.env.production.local backend/db/<script>.mjs`.
+- La versión real se publica en Vercel: frontend y API en un mismo proyecto, con `npm run build:vercel`. Las variables de la base van solo en el entorno Production, para que las vistas previas de los PR no la toquen. La atención HTTP está en `backend/http.mjs`, compartida por el servidor local y la función.
 - Ninguna clave viaja por correo. Las cuentas que crea una Pyme o un asesor reciben una invitación para crear la suya.
 - Los enlaces de confirmación, recuperación e invitación sirven una sola vez, vencen y se guardan como SHA-256. Al enviarlos con `enviarCorreo`, pasa el enlace como `privado`: con Resend configurado, la bandeja guarda el correo sin él.
 - Reenviar la confirmación y recuperar la contraseña responden lo mismo exista o no la cuenta.
@@ -825,3 +826,25 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - Sin datos, cada comando muestra su propio mensaje de uso y termina sin conectarse a la base.
   - No se creó ninguna cuenta en la base real: falta definir `APP_URL` para que el enlace apunte a la versión publicada.
   - `git diff --check` correcto. No cambia la interfaz.
+
+### RE-05 y RE-06 · Publicar el API y el frontend real en Vercel
+
+- Fecha: 2026-11-01.
+- Rama: `patricioampuero/re-05-publicar-api-vercel`.
+- Archivos agregados: `backend/http.mjs`, `backend/vercel/construir.mjs`, `backend/vercel/funcion.mjs`, `backend/vercel/rutas.mjs`, `backend/vercel/vercel.test.mjs` y `vercel.json`.
+- Archivos modificados: `backend/server.mjs`, `backend/README.md`, `package.json`, `package-lock.json`, `.gitignore` y `AGENTS.md`.
+- Cambio realizado:
+  - `npm run build:vercel` genera `.vercel/output` con el frontend y una función que contiene todo el API. El API se empaqueta con esbuild porque `backend/api` importa sin extensión.
+  - Frontend y API quedan en un mismo proyecto y una misma dirección, por eso RE-05 y RE-06 son una sola publicación y no hace falta configurar CORS. La app se compila con `VITE_API_URL=/api/v1`, así que sale en modo real, sin cuentas demo.
+  - La función corre en São Paulo (`gru1`), la región de la base.
+  - La dirección de los enlaces de los correos se toma de Vercel si no se define `APP_URL`, y cambia sola con un dominio propio.
+  - La atención HTTP pasó de `backend/server.mjs` a `backend/http.mjs`, para que el servidor y la función no la dupliquen.
+- Motivo: publicar la versión real con su base propia, decisión confirmada por el usuario.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 40 de 40, con 4 pruebas nuevas: rutas, dirección de la app, orígenes permitidos y la función ya empaquetada, sin base y sin el cargador de TypeScript.
+  - Recorrido local de `.vercel/output` contra la base real, solo con lecturas y las reglas de `config.json` simuladas: `/healthz`, comunas, planes, Pymes y ONG (200), QR inexistente (404), ingreso inválido (401).
+  - En Chromium a 1366 px con esa misma salida: landing, Explorar con estado vacío e ingreso sin botones demo; ingreso inválido con su mensaje y sin errores de JavaScript. No hubo otra revisión visual porque la interfaz no cambió.
+  - La revisión encontró un error: dentro del repositorio la función se cargaba como módulo ES. Ahora lleva su propio `package.json`, y la prueba empaqueta dentro del repositorio para detectarlo.
+  - `git diff --check` correcto.
+- Pendiente: la publicación en Vercel no se probó, porque requiere la cuenta del usuario. Esa revisión queda para el primer despliegue.

@@ -6,12 +6,13 @@
   "scripts": {
     "dev": "vite",
     "api:start": "node --env-file-if-exists=.env backend/server.mjs",
-    "test": "node --test src/modules/admin/admin-suspension.test.mjs src/modules/business/business.test.mjs src/modules/business/business-rules.test.mjs src/modules/directory/directory-hours.test.mjs src/modules/directory/explore-search.test.mjs backend/server.test.mjs backend/api/servidor.test.mjs backend/api/paridad.test.mjs backend/api/cuentas.test.mjs",
+    "test": "node --test src/modules/admin/admin-suspension.test.mjs src/modules/business/business.test.mjs src/modules/business/business-rules.test.mjs src/modules/directory/directory-hours.test.mjs src/modules/directory/explore-search.test.mjs backend/server.test.mjs backend/api/servidor.test.mjs backend/api/paridad.test.mjs backend/api/cuentas.test.mjs backend/vercel/vercel.test.mjs",
     "db:migrate": "node --env-file-if-exists=.env backend/db/migrate.mjs",
     "db:seed": "node --env-file-if-exists=.env backend/db/seed.mjs",
     "db:crear-admin": "node --env-file-if-exists=.env backend/db/crear-admin.mjs",
     "db:crear-asesor": "node --env-file-if-exists=.env backend/db/crear-admin.mjs --asesor",
     "build": "tsc -b && vite build",
+    "build:vercel": "node backend/vercel/construir.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -35,6 +36,7 @@
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.4",
+    "esbuild": "^0.28.2",
     "typescript": "~5.9.3",
     "vite": "^7.1.7"
   }
