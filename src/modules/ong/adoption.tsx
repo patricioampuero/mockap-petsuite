@@ -17,12 +17,12 @@ type AnimalDetalle = AnimalResumen & { ong_id: string; historia: string | null; 
 const tipoOng: Record<string, string> = { refugio: 'Refugio', rescatista_independiente: 'Rescatista independiente', agrupacion: 'Agrupación' }
 
 // UC-26 · Catálogo público de adopción: se explora sin cuenta (RF-09).
-export function AdoptionCatalog({ standalone }: { standalone?: boolean }) {
+export function AdoptionCatalog({ standalone, initialAnimal }: { standalone?: boolean; initialAnimal?: string | null }) {
   const [animals, setAnimals] = useState<AnimalResumen[] | null>(null)
   const [comunas, setComunas] = useState<Comuna[]>([])
   const [comuna, setComuna] = useState('')
   const [especie, setEspecie] = useState('')
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(initialAnimal ?? null)
   const [error, setError] = useState('')
 
   const [orgs, setOrgs] = useState<OrgResumen[]>([])

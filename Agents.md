@@ -879,3 +879,35 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - En Chromium sobre la build de Pages, a 1366 y 390 px en claro y oscuro: 30 comunas en la landing, Explorar y registro, filtro por «Río Negro» correcto, clave v4 borrada, sin errores de JavaScript ni desplazamiento horizontal.
   - `git diff --check` correcto.
 - Pendiente: aplicar la migración en la base real después de fusionar esta rama, con `node --env-file=.env.production.local backend/db/migrate.mjs`.
+
+## 2026-11-02
+
+### Inicio del tutor con atajos, recorrido y vida de la comuna (solo frontend)
+
+- Fecha: 2026-11-02.
+- Rama: `patricioampuero/inicio-tutor-recorridos`.
+- Archivos agregados: `src/modules/tutor/tutor-home.tsx`.
+- Archivos modificados: `src/modules/tutor/tutor.tsx`, `src/modules/directory/directory.tsx`, `src/modules/ong/adoption.tsx`, `src/modules/community/community.tsx`, `src/styles/design-pro.css` y `AGENTS.md`.
+- Cambio realizado:
+  - «¿Qué necesitas hoy?»: ocho atajos de color bajo la portada. Son veterinarias, peluquería, alimento, ofertas, adoptar, reportar extravío, medalla QR y muro.
+    - Cada atajo muestra una cifra real de la comuna del tutor, por ejemplo «1 en Osorno» o «5 buscan hogar».
+    - Cada uno abre su vista con lo elegido: el directorio filtrado por rubro y comuna, o el muro con el editor de extravío abierto. La medalla abre el QR de la mascota.
+    - Si la comuna no tiene negocios de ese rubro, el directorio se abre sin filtrar por comuna.
+  - «Tu recorrido»: anillo de avance y cinco pasos (mascota, datos de salud, medalla QR, vacunas y participación en el muro).
+    - Cada paso se marca con lo que el tutor ya registró, no con clics, y lleva su acción.
+    - Se oculta al completar los cinco pasos y reemplaza al panel «Primeros pasos» de FE-03.
+  - «Esta semana en tu comuna»: extravíos y alertas activos, y próximos eventos con su fecha, en lugar de la última publicación del muro.
+  - Carriles con desplazamiento horizontal:
+    - «Servicios en tu comuna», con foto, rubro, estado de apertura, ofertas y cuántos están abiertos ahora. Usan el orden normal de Explorar, que no depende del plan.
+    - «Buscan un hogar», con los animales de su comuna primero. Cada uno abre su ficha de adopción.
+  - El aviso de medalla QR solo aparece si hay mascotas sin medalla. El botón «Ir al muro» de la portada pasa a «Explorar servicios».
+  - `DirectoryView`, `AdoptionCatalog` y `CommunityView` aceptan un filtro, un animal o un tipo de publicación inicial. Al salir de esa vista se olvida, y el menú la abre sin filtros.
+  - Estilos en `design-pro.css`: un bloque propio con tonos por atajo y el token nuevo `--tone-danger`, con su variante para modo oscuro. Respetan el movimiento reducido.
+- Motivo: el usuario pidió más opciones de recorrido en la vista del tutor y que llamara la atención del público.
+- Dependencias: ninguna. Solo se leen rutas existentes (`/pymes`, `/adopciones`, `/muro`, `/comunas`); no se tocaron `src/mock/` ni `backend/`.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores, `npm run build -- --base=/mockap-petsuite/` correcto, `npm test` 41 de 41 y `git diff --check` correcto.
+  - Recorrido con Chromium sobre la build de Pages:
+    - Tutor demo y una cuenta nueva sin mascotas (recorrido en 0 de 5), a 1366 y 390 px, en claro y oscuro.
+    - Sin errores de JavaScript ni desplazamiento horizontal.
+    - Atajos probados: «Veterinarias» abre el directorio con Veterinarias y Osorno; «Reportar extravío» abre el editor con ese tipo; un animal del carril abre su ficha de adopción.

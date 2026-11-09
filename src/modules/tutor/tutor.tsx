@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, ArrowRight, CalendarDays, Check, ChevronRight, CirclePlus, Copy, Download, MessageCircle, PawPrint, Pencil, Printer, QrCode, ShieldCheck, TriangleAlert, X } from 'lucide-react'
+import { AlertCircle, ArrowRight, CalendarDays, Check, ChevronRight, CirclePlus, Compass, Copy, Download, HeartHandshake, Megaphone, MessageCircle, MessagesSquare, PawPrint, Pencil, Printer, QrCode, Scissors, ShieldCheck, ShoppingBag, Stethoscope, Tag, TriangleAlert, X } from 'lucide-react'
 import QRCode from 'qrcode'
 import { LogoMark, Photo } from '../../shared/media'
 import { EmptyState, ErrorState, LoadingState } from '../../shared/feedback'
 import { ApiError, api, edadDesde, emptyFicha, errorText, fechaLarga, iniciales, type FichaDatos, type Mascota, type PublicaEmergencia, type PymeResumen, type RegistroMeta } from '../../shared/api'
 import { emergencyContactSchema, medicalEntrySchema, petDetailsSchema, petHealthSchema } from '../../shared/validators'
 import { AdoptionCatalog } from '../ong/adoption'
-import { CommunityView } from '../community/community'
-import { DirectoryView } from '../directory/directory'
+import { CommunityView, type Tipo } from '../community/community'
+import { DirectoryView, type DirectorioInicial } from '../directory/directory'
+import { AdoptionShowcase, CommunityPulse, NearbyServices, QuickRoutes, TutorJourney, enComuna, useTutorHome, type Paso, type Ruta } from './tutor-home'
 import { BannerStrip } from '../promotions/promotions'
 import { useModalFocus } from '../../shared/accessibility'
 import { ProfileCover } from '../../shared/profile-cover'
@@ -56,6 +57,10 @@ function usePets(view: string) {
   return { pets, error, load }
 }
 
+// Un atajo del Inicio lleva a otra vista con algo ya elegido: filtros del directorio, un animal o el tipo de publicación.
+type Destino = { vista: 'directory'; dir: DirectorioInicial } | { vista: 'adoption'; animal: string } | { vista: 'community'; tipo: Tipo }
+type Ir = (vista: string, destino?: Destino) => void
+
 export function TutorArea({ active, setActive, name }: { active: string; setActive: (id: string) => void; name: string }) {
   const { pets, error, load } = usePets(active)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -64,18 +69,25 @@ export function TutorArea({ active, setActive, name }: { active: string; setActi
   const [qrPet, setQrPet] = useState<Mascota | null>(null)
   const [nextField, setNextField] = useState<{ id: string; field: 'allergies' | 'conditions' | 'qr' } | null>(null)
   const [openPyme, setOpenPyme] = useState<string | null>(null)
+  const [destino, setDestino] = useState<Destino | null>(null)
   const consumed = useCallback(() => setOpenPyme(null), [])
+  // Al salir de la vista de destino se olvida lo elegido: volver por el menú la abre sin filtros.
+  useEffect(() => { if (destino && destino.vista !== active) setDestino(null) }, [active, destino])
 
-  if (active === 'adoption') return <AdoptionCatalog />
-  if (active === 'directory') return <DirectoryView initialPyme={openPyme} onOpened={consumed} />
-  if (active === 'community') return <CommunityView onAdoption={() => setActive('adoption')} onPyme={id => { setOpenPyme(id); setActive('directory') }} />
+  const ir: Ir = (vista, d) => { setDestino(d ?? null); setActive(vista) }
+  const openBusiness = (id: string) => { setOpenPyme(id); ir('directory') }
+  const para = destino?.vista === active ? destino : null
+  if (active === 'adoption') return <AdoptionCatalog initialAnimal={para?.vista === 'adoption' ? para.animal : null} />
+  if (active === 'directory') return <DirectoryView initialPyme={openPyme} onOpened={consumed} initialFilters={para?.vista === 'directory' ? para.dir : null} />
+  if (active === 'community') return <CommunityView initialType={para?.vista === 'community' ? para.tipo : null} onAdoption={() => setActive('adoption')} onPyme={openBusiness} />
   if (!pets) return <section className="page">{error ? <ErrorState message={error} onRetry={() => void load()} /> : <LoadingState label="Cargando mascotas" />}</section>
   const selected = pets.find(p => p.id === selectedId) || pets[0] || null
   const pick = (pet: Mascota) => { setSelectedId(pet.id); setActive('pets') }
   const openMissing = (pet: Mascota) => { const field = completionOf(pet).next; if (!field) return; setSelectedId(pet.id); setNextField({ id: pet.id, field }); setActive('pets') }
+  const openHealth = (pet: Mascota) => { setSelectedId(pet.id); setNextField({ id: pet.id, field: 'allergies' }); setActive('pets') }
 
   return <>
-    {active === 'home' && <Dashboard pets={pets} name={name} banner={<BannerStrip ubicacion="inicio" onPyme={id => { setOpenPyme(id); setActive('directory') }} />} onSelect={pick} onMissing={openMissing} onPets={() => setActive('pets')} onCommunity={() => setActive('community')} onAdd={() => setShowAdd(true)} />}
+    {active === 'home' && <Dashboard pets={pets} name={name} banner={<BannerStrip ubicacion="inicio" onPyme={openBusiness} />} onSelect={pick} onMissing={openMissing} onHealth={openHealth} onQr={setQrPet} onPets={() => setActive('pets')} onPyme={openBusiness} onAdd={() => setShowAdd(true)} ir={ir} />}
     {active === 'pets' && <PetsView pets={pets} selected={selected} onSelect={pet => setSelectedId(pet.id)} onMissing={openMissing} target={nextField} onTargetHandled={() => setNextField(null)} onAdd={() => setShowAdd(true)} onQr={setQrPet} onEdit={setEditing} onChanged={load} />}
     {showAdd && <PetFormModal onClose={() => setShowAdd(false)} onSaved={async id => { await load(); setSelectedId(id); setShowAdd(false); setActive('pets') }} />}
     {editing && <PetFormModal pet={editing} onClose={() => setEditing(null)} onSaved={async () => { await load(); setEditing(null) }} />}
@@ -104,26 +116,62 @@ function PetHero({ pet, onOpen }: { pet: Mascota; onOpen: () => void }) {
   </article>
 }
 
-function Dashboard({ pets, name, banner, onSelect, onMissing, onPets, onCommunity, onAdd }: { pets: Mascota[]; name: string; banner?: React.ReactNode; onSelect: (pet: Mascota) => void; onMissing: (pet: Mascota) => void; onPets: () => void; onCommunity: () => void; onAdd: () => void }) {
-  const [latest, setLatest] = useState<{ autor: string; tipo: string; texto: string } | null>(null)
-  useEffect(() => { api<{ autor: string; tipo: string; texto: string }[]>('/muro').then(p => setLatest(p[0] || null)).catch(() => setLatest(null)) }, [])
+function Dashboard({ pets, name, banner, onSelect, onMissing, onHealth, onQr, onPets, onPyme, onAdd, ir }: { pets: Mascota[]; name: string; banner?: React.ReactNode; onSelect: (pet: Mascota) => void; onMissing: (pet: Mascota) => void; onHealth: (pet: Mascota) => void; onQr: (pet: Mascota) => void; onPets: () => void; onPyme: (id: string) => void; onAdd: () => void; ir: Ir }) {
+  const home = useTutorHome()
+  const { comuna } = home
   const sinQr = pets.filter(p => !p.token_activo).length
   const vaccines = upcomingVaccines(pets)
-  return <section className="page home-page">
+  const conQr = pets.find(p => p.token_activo)
+  const primera = pets[0]
+
+  // Cada atajo muestra cuántos hay en la comuna del tutor; si no hay ninguno, el directorio se abre sin comuna.
+  const pymes = home.pymes.data
+  const directorio = (id: string, label: string, icon: Ruta['icon'], tone: Ruta['tone'], rubro: string, ofertas = false): Ruta => {
+    const n = pymes ? enComuna(pymes, comuna, rubro).filter(p => !ofertas || !!p.ofertas || !!p.cupones?.length).length : null
+    const lugar = comuna ? `en ${comuna}` : 'en PetSuite'
+    return { id, label, icon, tone, detail: n === null ? 'Ver en el directorio' : ofertas ? `${n} ${n === 1 ? 'negocio' : 'negocios'} ${lugar}` : `${n} ${lugar}`, onClick: () => ir('directory', { vista: 'directory', dir: { rubro, ofertas, comuna: n ? comuna : '' } }) }
+  }
+  const animales = home.animales.data?.length
+  const avisos = home.muro.data?.filter(p => p.urgente && !p.resuelto).length ?? 0
+  const rutas: Ruta[] = [
+    directorio('vet', 'Veterinarias', Stethoscope, 'accent', 'veterinaria'),
+    directorio('pelu', 'Peluquería y baño', Scissors, 'info', 'peluqueria'),
+    directorio('tienda', 'Alimento y accesorios', ShoppingBag, 'success', 'tienda'),
+    directorio('ofertas', 'Ofertas y cupones', Tag, 'warm', '', true),
+    { id: 'adoptar', label: 'Adoptar', icon: HeartHandshake, tone: 'danger', detail: animales == null ? 'Animales en adopción' : `${animales} buscan hogar`, onClick: () => ir('adoption') },
+    { id: 'extravio', label: 'Reportar extravío', icon: Megaphone, tone: 'warm', detail: 'Avisa a tu comuna', onClick: () => ir('community', { vista: 'community', tipo: 'extravio' }) },
+    { id: 'qr', label: 'Medalla QR', icon: QrCode, tone: 'accent', detail: conQr ? `Mostrar la de ${conQr.nombre}` : primera ? `Actívala para ${primera.nombre}` : 'Registra tu mascota', onClick: () => conQr ? onQr(conQr) : primera ? onQr(primera) : onAdd() },
+    { id: 'muro', label: 'Muro comunal', icon: MessagesSquare, tone: 'info', detail: avisos ? `${avisos} ${avisos === 1 ? 'aviso activo' : 'avisos activos'}` : 'Lo nuevo de tu comuna', onClick: () => ir('community') },
+  ]
+
+  // El recorrido se marca con lo que el tutor ya registró: fichas, medallas, vacunas y su participación en el muro.
+  const conSalud = pets.some(p => { const f = ficha(p); return f.alergias.length > 0 || f.condiciones.length > 0 || !!f.notaEmergencia })
+  const pasos: Paso[] = [
+    { id: 'mascota', label: 'Registra a tu mascota', detail: 'Su nombre y especie bastan para empezar.', done: pets.length > 0, action: 'Registrar', onClick: onAdd },
+    { id: 'salud', label: 'Completa sus datos de salud', detail: 'Alergias, condiciones y una nota para quien la encuentre.', done: conSalud, action: 'Completar', onClick: () => primera ? onHealth(primera) : onAdd() },
+    { id: 'qr', label: 'Activa su medalla QR', detail: 'Quien la encuentre podrá avisarte sin ver tus datos.', done: !!conQr, action: 'Activar', onClick: () => primera ? onQr(primera) : onAdd() },
+    { id: 'vacunas', label: 'Registra sus vacunas', detail: 'Aquí verás cuándo se acerca la próxima dosis.', done: pets.some(p => ficha(p).vacunas.length > 0), action: 'Registrar', onClick: () => primera ? onSelect(primera) : onAdd() },
+    { id: 'comunidad', label: 'Súmate a tu comuna', detail: 'Publica o apoya un aviso en el muro comunal.', done: !!home.muro.data?.some(p => p.es_mio || p.reaccione), action: 'Ir al muro', onClick: () => ir('community') },
+  ]
+
+  return <section className="page home-page tutor-home">
     <ProfileCover eyebrow="TU ESPACIO PETSUITE" title={`Hola, ${name.split(' ')[0]}`} subtitle="Todo lo importante para tus mascotas, en un solo lugar." avatar={iniciales(name)}
-      actions={<><button className="primary" onClick={onAdd}><CirclePlus size={17} /> Agregar mascota</button><button className="secondary" onClick={onCommunity}><MessageCircle size={17} /> Ir al muro</button></>}
+      actions={<><button className="primary" onClick={onAdd}><CirclePlus size={17} /> Agregar mascota</button><button className="secondary" onClick={() => ir('directory')}><Compass size={17} /> Explorar servicios</button></>}
       stats={[{ label: 'Mascotas', value: pets.length }, { label: 'Medallas QR activas', value: pets.length - sinQr }, { label: 'Vacunas próximas', value: vaccines.length }]} />
-    {!pets.length && <section className="onboarding-panel" aria-labelledby="onboarding-title"><p className="eyebrow">PRIMEROS PASOS</p><h2 id="onboarding-title">Prepara su ficha de emergencia</h2><p>Desde la Ficha Única puedes compartir datos críticos sin mostrar tu información personal.</p><ol><li><strong>Registra tu mascota</strong><span>Comienza con su nombre y especie.</span><button className="primary" onClick={onAdd}>Registrar mascota <ArrowRight size={16} /></button></li><li><strong>Completa alergias y condiciones</strong><span>Después del registro, agrega lo que quien la encuentre debe saber.</span></li><li><strong>Genera su medalla QR</strong><span>Abre su ficha y activa el código de emergencia.</span></li></ol></section>}
-    {banner}
-    {pets[0] && <PetHero pet={pets[0]} onOpen={() => onSelect(pets[0])} />}
-    {pets.length > 0 && <div className="alert-card"><div className="alert-icon"><QrCode size={22} /></div><div><strong>{sinQr ? `${sinQr} ${sinQr === 1 ? 'mascota sin' : 'mascotas sin'} medalla QR activa` : 'Su ficha de emergencia, siempre lista'}</strong><p>{sinQr ? 'Activa su QR para que quien la encuentre pueda avisarte sin ver tus datos personales.' : 'Revisa los datos de tus mascotas y accede a su QR cuando lo necesites.'}</p></div><button className="text-button" onClick={onPets}>Ver fichas <ArrowRight size={16} /></button></div>}
+    <QuickRoutes rutas={rutas} />
+    {(home.muro.data || home.muro.error) && <TutorJourney pasos={pasos} />}
+    {primera && <PetHero pet={primera} onOpen={() => onSelect(primera)} />}
+    {sinQr > 0 && <div className="alert-card warn"><div className="alert-icon"><QrCode size={22} /></div><div><strong>{`${sinQr} ${sinQr === 1 ? 'mascota sin' : 'mascotas sin'} medalla QR activa`}</strong><p>Activa su QR para que quien la encuentre pueda avisarte sin ver tus datos personales.</p></div><button className="text-button" onClick={onPets}>Ver fichas <ArrowRight size={16} /></button></div>}
+    <div className="tutor-home-grid">
     <section className="content-panel upcoming-vaccines" aria-labelledby="upcoming-vaccines-title"><div className="section-heading"><div><p className="eyebrow">SALUD Y PREVENCIÓN</p><h2 id="upcoming-vaccines-title">Próximas vacunas</h2></div>{vaccines.length > 0 && <span className="pet-count">{vaccines.length}</span>}</div>{vaccines.length > 0 ? <div className="vaccination-list">{vaccines.map(vaccine => <button type="button" className={vaccine.days < 0 ? 'vaccination-row overdue' : 'vaccination-row'} key={`${vaccine.pet.id}-${vaccine.name}-${vaccine.date}`} onClick={() => onSelect(vaccine.pet)}><span className="vaccination-icon"><CalendarDays size={18} /></span><span className="vaccination-main"><strong>{vaccine.name}</strong><small>{vaccine.pet.nombre} · {fechaLarga(vaccine.date)}</small></span><span className="vaccination-status">{vaccine.days < 0 ? `Vencida hace ${Math.abs(vaccine.days)} días` : vaccine.days === 0 ? 'Vence hoy' : `Faltan ${vaccine.days} días`}<ChevronRight size={17} aria-hidden="true" /></span></button>)}</div> : <div className="vaccination-empty"><CalendarDays size={22} aria-hidden="true" /><div><strong>No hay vacunas próximas</strong><p>Cuando una vacuna tenga próxima dosis dentro de 30 días, aparecerá aquí.</p></div></div>}</section>
+    <CommunityPulse muro={home.muro} comuna={comuna} onOpen={() => ir('community')} />
+    </div>
+    {banner}
+    <NearbyServices pymes={home.pymes} comuna={comuna} onPyme={onPyme} onAll={() => ir('directory', { vista: 'directory', dir: { comuna: pymes && comuna && enComuna(pymes, comuna).length ? comuna : '' } })} />
+    <AdoptionShowcase animales={home.animales} comuna={comuna} onAnimal={id => ir('adoption', { vista: 'adoption', animal: id })} onAll={() => ir('adoption')} />
     {pets.length > 0 && <section className="content-panel"><div className="section-heading"><div><p className="eyebrow">MIS MASCOTAS</p><h2>Sus fichas</h2></div><button className="text-button" onClick={onPets}>Ver todas <ArrowRight size={16} /></button></div>
       <div className="pet-grid">{pets.map(pet => <PetCardWithNext key={pet.id} pet={pet} onClick={() => onSelect(pet)} onMissing={() => onMissing(pet)} />)}<button className="add-card" onClick={onAdd}><CirclePlus size={25} /><strong>Agregar mascota</strong><small>Registra a un nuevo compañero</small></button></div>
     </section>}
-    <section className="content-panel"><div className="section-heading community-heading"><div><p className="eyebrow">COMUNIDAD</p><h2>Lo último en el muro de tu comuna</h2></div><button className="text-button" onClick={onCommunity}>Ir al muro <ArrowRight size={16} /></button></div>
-      {latest ? <div className="post-preview"><div className="post-avatar">{iniciales(latest.autor)}</div><div><strong>{latest.autor}</strong><p>{latest.texto}</p><span className="post-tag">{latest.tipo.toUpperCase()}</span></div></div> : <p className="muted">Todavía no hay publicaciones en tu comuna.</p>}
-    </section>
   </section>
 }
 

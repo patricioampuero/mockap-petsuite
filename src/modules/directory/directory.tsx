@@ -52,13 +52,16 @@ function PlacesMap({ places, onSelect }: { places: PymeResumen[]; onSelect: (p: 
   return <div ref={box} className="leaflet-box" role="region" aria-label="Mapa de negocios Pet-Care" />
 }
 
-export function DirectoryView({ initialPyme, onOpened }: { initialPyme?: string | null; onOpened?: () => void } = {}) {
+/** Filtros con que se abre el directorio desde un atajo, por ejemplo «Veterinarias» en el Inicio del tutor. */
+export type DirectorioInicial = { rubro?: string; comuna?: string; ofertas?: boolean }
+
+export function DirectoryView({ initialPyme, onOpened, initialFilters }: { initialPyme?: string | null; onOpened?: () => void; initialFilters?: DirectorioInicial | null } = {}) {
   const [places, setPlaces] = useState<PymeResumen[] | null>(null)
   const [comunas, setComunas] = useState<Comuna[]>([])
-  const [comuna, setComuna] = useState('')
-  const [rubro, setRubro] = useState('')
+  const [comuna, setComuna] = useState(initialFilters?.comuna ?? '')
+  const [rubro, setRubro] = useState(initialFilters?.rubro ?? '')
   const [query, setQuery] = useState('')
-  const [soloOfertas, setSoloOfertas] = useState(false)
+  const [soloOfertas, setSoloOfertas] = useState(!!initialFilters?.ofertas)
   const [soloAbiertos, setSoloAbiertos] = useState(false)
   const [now, setNow] = useState(() => new Date())
   const [selected, setSelected] = useState<PymeResumen | null>(null)
