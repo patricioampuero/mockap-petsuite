@@ -24,6 +24,8 @@ test('la dirección de la app sale de Vercel, salvo que se fije APP_URL', () => 
 test('solo se permiten los orígenes del propio sitio', () => {
   assert.equal(origenes({ VERCEL_PROJECT_PRODUCTION_URL: 'petsuite.vercel.app', VERCEL_URL: 'petsuite-abc.vercel.app' }), 'https://petsuite.vercel.app,https://petsuite-abc.vercel.app')
   assert.equal(origenes({ APP_URL: 'https://petsuite.cl/app/' }), 'https://petsuite.cl')
+  // Con APP_URL sin www y el dominio de producción con www (o al revés), se aceptan ambos.
+  assert.equal(origenes({ APP_URL: 'https://petsuite.space/', VERCEL_PROJECT_PRODUCTION_URL: 'www.petsuite.space' }), 'https://petsuite.space,https://www.petsuite.space')
   assert.equal(origenes({}), '')
 })
 
@@ -45,7 +47,12 @@ test('la función empaquetada funciona sin el cargador de TypeScript', async () 
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
     const base = `http://127.0.0.1:${server.address().port}`
 
-    assert.deepEqual(await (await fetch(`${base}/api/index`)).json(), { ok: true })
+    // /healthz consulta la base: sin base, la función empaquetada responde 503 (y el monitoreo lo detecta).
+    const errorOriginal = console.error
+    console.error = () => {}
+    const salud = await fetch(`${base}/api/index`).finally(() => { console.error = errorOriginal })
+    assert.equal(salud.status, 503)
+    assert.deepEqual(await salud.json(), { ok: false, message: 'La base de datos no responde' })
     const sinRuta = await fetch(`${base}/api/index?ruta=no-existe`)
     assert.equal(sinRuta.status, 404)
     assert.equal((await sinRuta.json()).message, 'No encontrado')

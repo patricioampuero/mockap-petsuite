@@ -43,7 +43,7 @@ Estas reglas resumen errores que ya ocurrieron. Léelas antes de cada tarea.
 
 ### Estructura del código
 
-- `src/shared/`: núcleo común (`api`, `validators`, `permissions`, `media`, `feedback`, `accessibility`, `share`, `errors`, `legal`, `cuentas`, `profile-cover`, `metric`).
+- `src/shared/`: núcleo común (`api`, `validators`, `permissions`, `media`, `feedback`, `accessibility`, `share`, `errors`, `legal`, `cuentas`, `limites`, `avisos`, `profile-cover`, `metric`).
 - `src/styles/`: hojas de estilo.
 - `src/modules/<área>/`: una carpeta por área (landing, tutor, community, directory, business, clinical, ong, plans, promotions, advisor, admin, privacy, auth).
 - `src/mock/`: API simulada en el navegador.
@@ -56,7 +56,8 @@ Estas reglas resumen errores que ya ocurrieron. Léelas antes de cada tarea.
 - Toda ruta o regla nueva o modificada se implementa a la vez en `src/mock/` y en `backend/api/`, con un paso en el guion de `backend/api/paridad.test.mjs`. La prueba de cobertura falla si una ruta queda sin guion.
 - Una tarea «solo frontend» no toca `src/mock/` ni `backend/`. Si necesita un dato nuevo, se anota como dependencia.
 - Las respuestas públicas (QR, adopciones, ONG) son lista blanca: nunca datos del tutor, medicamentos, historial ni ids internos. Un id interno solo se devuelve al dueño del recurso.
-- La estructura de la base cambia solo con migraciones nuevas en `backend/db/migrations/`, nunca desde el panel de Supabase.
+- La estructura de la base cambia solo con migraciones nuevas en `backend/db/migrations/`, nunca desde el panel de Supabase. Aplica la migración en la base real antes de fusionar en `main`, porque la fusión publica la versión nueva al instante.
+- Una ruta pública que acepta contraseñas, envía correos o deja mensajes a otra persona debe tener su límite en `src/shared/limites.ts`, que comparten el mock y el API.
 - La base es compartida: `npm run db:seed -- --reset` borra los datos de todo el equipo. No lo uses sin avisar.
 - `.env` nunca se sube al repositorio ni se pega en el chat.
 
@@ -911,3 +912,47 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
     - Tutor demo y una cuenta nueva sin mascotas (recorrido en 0 de 5), a 1366 y 390 px, en claro y oscuro.
     - Sin errores de JavaScript ni desplazamiento horizontal.
     - Atajos probados: «Veterinarias» abre el directorio con Veterinarias y Osorno; «Reportar extravío» abre el editor con ese tipo; un animal del carril abre su ficha de adopción.
+
+## 2026-11-09
+
+### Aviso al tutor desde el QR, límites de solicitudes y monitoreo de la versión real
+
+- Fecha: 2026-11-09.
+- Rama: `patricioampuero/aviso-tutor-y-limites`, creada sobre `patricioampuero/inicio-tutor-recorridos` para no chocar en esta bitácora mientras esa rama no esté en `main`. Se fusiona después de ella.
+- Archivos agregados: `src/shared/limites.ts`, `src/shared/avisos.ts`, `backend/api/limites.ts`, `backend/api/limites.test.mjs`, `backend/db/migrations/006_avisos_y_limites.sql` y `.github/workflows/salud.yml`.
+- Archivos modificados:
+  - API: `backend/api/index.ts`, `backend/api/ficha.ts`, `backend/api/auth.ts`, `backend/http.mjs` y `backend/vercel/rutas.mjs`.
+  - Mock: `src/mock/server.ts`, `src/mock/db.ts` y `src/mock/suite.ts`.
+  - Pruebas: `backend/api/paridad.test.mjs`, `backend/vercel/vercel.test.mjs` y `package.json`.
+  - Otros: `.github/workflows/discord-notifications.yml`, `.github/scripts/notify-discord.mjs`, `backend/README.md` y `Agents.md`, con dos reglas nuevas en «API: mock y base de datos».
+- Cambio realizado:
+  - **Aviso al tutor.** Cada mensaje enviado desde la ficha pública de una medalla le llega al tutor por correo, con el mensaje, el nombre y el contacto que dejó quien escribió, y un enlace a OpenStreetMap si compartió su ubicación.
+    - La copia de la bandeja omite esos datos, porque son de un tercero: el cuerpo dice «[mensaje enviado solo al tutor]».
+    - Si el correo falla, el mensaje igual queda guardado y el tutor lo ve en la ficha de la mascota. El aviso corre en un punto de guardado de la transacción, así que un error al registrarlo no deshace el mensaje.
+    - En la demo, el aviso llega a la bandeja simulada. `enviarCorreo` acepta ahora `obligatorio` y el texto que reemplaza la parte privada.
+  - **Límites de solicitudes** (`src/shared/limites.ts`), iguales en el mock y el API. Al superarlos, la ruta responde 429 «Demasiados intentos. Espera… y vuelve a intentarlo.», que el ingreso y la ficha pública ya muestran tal cual:
+    - 5 contraseñas incorrectas por cuenta y cliente cada 15 minutos, y 30 por cliente. Un ingreso correcto olvida los intentos de esa cuenta. Como cuenta el cliente, nadie puede bloquear a otra persona desde otro lugar.
+    - 10 correos de registro, reenvío o recuperación por cliente cada hora.
+    - 5 mensajes por medalla y cliente cada hora, y 30 por medalla al día.
+    - El cliente es la huella SHA-256 de la IP (`clienteDe` en `backend/http.mjs`, con `x-real-ip` o `x-forwarded-for` en Vercel). En el mock siempre es `local`.
+    - La tabla `limites_solicitudes` guarda solo la huella de cada clave y la hora: nunca el correo, el token ni la IP. Los eventos se registran en transacciones propias, para que un intento fallido no se pierda cuando la ruta se deshace, y se borran a los 2 días.
+  - **Migración 006**: la tabla `limites_solicitudes`, con RLS, y el tipo de correo `aviso_qr`. Si la versión se publica antes de aplicarla, el API sigue permitiendo el ingreso y guardando los mensajes, sin límites ni avisos, y lo anota en el registro.
+  - **Monitoreo.** `/healthz` consulta la base y responde 503 si no contesta. El workflow `Salud` lo revisa dos veces al día, con tres intentos, y si falla avisa en Discord. Eso además evita que Supabase pause la base del plan gratuito. Usa la variable del repositorio `SALUD_URL` y, si falta, `https://mockap-petsuite.vercel.app`.
+  - **Orígenes del API.** Se suma el dominio de producción de Vercel, así funcionan `petsuite.space` y `www.petsuite.space` aunque `APP_URL` fije solo uno.
+  - **Mock.** La clave pasa a `petsuite-mock-db-v6` porque el modelo suma `limites`, y se borra la v5.
+- Motivo: el usuario pidió terminar lo que falta antes del piloto. El QR guardaba los mensajes sin avisar a nadie, no había límite de intentos y la base gratuita se pausaba tras 7 días sin uso. El usuario compró `petsuite.space` en Vercel para que Resend pueda enviar a cualquier persona.
+- Pendiente:
+  - Aplicar la migración 006 en la base de la demo y en la real antes de fusionar.
+  - Definir `SALUD_URL`, `APP_URL` y `MAIL_FROM` con el dominio nuevo, y verificar el dominio en Resend.
+  - Mostrar en el Inicio del tutor cuántos avisos nuevos tiene: toca archivos de la rama del tutor.
+  - Verificar el certificado TLS de Supabase.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores, `npm run build -- --base=/mockap-petsuite/` correcto y `git diff --check` correcto.
+  - `npm test`: 45 de 45, con 4 pruebas nuevas en `limites.test.mjs`:
+    - intentos por cuenta y por cliente, y solo huellas en la tabla;
+    - aviso por Resend simulado, sin el mensaje ni el contacto en la bandeja, y mensaje guardado aunque el envío falle;
+    - base sin la migración 006, en la que el ingreso y los mensajes siguen funcionando;
+    - `/healthz` con y sin base, y la huella de la IP.
+  - La paridad suma pasos con 429 en el ingreso, los correos y los mensajes del QR, además del aviso en la bandeja. Ambos backends responden lo mismo.
+  - La prueba de Vercel comprueba que la función empaquetada, sin base, responde 503 en `/healthz`.
+  - Sin cambios de interfaz: no se revisó en el navegador.

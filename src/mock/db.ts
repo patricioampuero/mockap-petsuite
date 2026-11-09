@@ -72,7 +72,9 @@ export type Convenio = {
   premios: { mes: string; otorgado_en: string }[]; creado_en: string
 }
 export type Canje = { id: string; convenio_id: string; sucursal_id: string | null; monto_clp: number | null; registrado_por: string; ocurrido_en: string }
-export type Correo = { id: string; para: string; asunto: string; cuerpo: string; tipo: 'bienvenida' | 'verificacion' | 'restablecer' | 'cuenta_creada' | 'cuenta_equipo' | 'aprobacion' | 'convenio' | 'cobranza' | 'privacidad' | 'premio'; enviado_en: string }
+export type Correo = { id: string; para: string; asunto: string; cuerpo: string; tipo: 'bienvenida' | 'verificacion' | 'restablecer' | 'cuenta_creada' | 'cuenta_equipo' | 'aprobacion' | 'convenio' | 'cobranza' | 'privacidad' | 'premio' | 'aviso_qr'; enviado_en: string }
+/** Evento contado por los límites de solicitudes (src/shared/limites.ts). */
+export type EventoLimite = { clave: string; ocurrido_en: string }
 // Derechos ARSOPOL de la Ley 21.719: acceso, rectificación, supresión, oposición, portabilidad y bloqueo.
 export type SolicitudPrivacidad = { id: string; usuario_id: string; derecho: 'acceso' | 'rectificacion' | 'supresion' | 'oposicion' | 'portabilidad' | 'bloqueo'; detalle: string; estado: 'recibida' | 'en_proceso' | 'respondida' | 'rechazada'; respuesta: string | null; creado_en: string; vence_en: string; respondido_en: string | null }
 
@@ -109,11 +111,12 @@ export type Db = {
   correos: Correo[]
   solicitudes_privacidad: SolicitudPrivacidad[]
   tokens_cuenta: TokenCuenta[]
+  limites: EventoLimite[]
 }
 
-// v4: confirmación de correo, recuperación de contraseña e invitaciones con enlace. Los datos anteriores se descartan.
-export const STORAGE_KEY = 'petsuite-mock-db-v5'
-try { for (const old of ['petsuite-mock-db-v1', 'petsuite-mock-db-v2', 'petsuite-mock-db-v3', 'petsuite-mock-db-v4']) localStorage.removeItem(old) } catch { /* sin almacenamiento */ }
+// v6: límites de solicitudes y aviso al tutor desde el QR. Los datos anteriores se descartan.
+export const STORAGE_KEY = 'petsuite-mock-db-v6'
+try { for (const old of ['petsuite-mock-db-v1', 'petsuite-mock-db-v2', 'petsuite-mock-db-v3', 'petsuite-mock-db-v4', 'petsuite-mock-db-v5']) localStorage.removeItem(old) } catch { /* sin almacenamiento */ }
 export const CLAVE_DEMO = 'petsuite123'
 export { VERSION_PRIVACIDAD }
 
@@ -141,7 +144,7 @@ function seed(): Db {
     comunas: ['Osorno', 'Puerto Montt', 'Castro', 'Puerto Octay', 'Purranque', 'Puyehue', 'Río Negro', 'San Juan de la Costa', 'San Pablo', 'Calbuco', 'Cochamó', 'Fresia', 'Frutillar', 'Llanquihue', 'Los Muermos', 'Maullín', 'Puerto Varas', 'Ancud', 'Chonchi', 'Curaco de Vélez', 'Dalcahue', 'Puqueldón', 'Queilén', 'Quellón', 'Quemchi', 'Quinchao', 'Chaitén', 'Futaleufú', 'Hualaihué', 'Palena'].map((nombre, i) => ({ id: i + 1, nombre })),
     usuarios: [], sesiones: {}, mascotas: [], medallas: [], escaneos: [], mensajes: [], accesos: [], pymes: [], sucursales: [], miembros: [], catalogo: [], eventos: [], contactos_pymes: [],
     suscripciones: [], pagos: [], casos_cobranza: [], publicaciones: [], comentarios: [], reacciones: [], guardados: [], reportes: [], ongs: [], animales: [], solicitudes: [], eventos_adopcion: [],
-    banners: [], convenios: [], canjes: [], correos: [], solicitudes_privacidad: [], tokens_cuenta: [],
+    banners: [], convenios: [], canjes: [], correos: [], solicitudes_privacidad: [], tokens_cuenta: [], limites: [],
   }
   const user = (correo: string, rol: ApiRole, nombre: string, comuna: number) => {
     const creado = t()

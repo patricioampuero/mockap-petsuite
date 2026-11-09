@@ -1,5 +1,5 @@
 # ==========================================================================================================
-# Notify the Discord group about main pushes and failed Pages publications.
+# Notify the Discord group about main pushes, failed Pages publications and failed health checks.
 # ==========================================================================================================
 name: Discord notifications
 
@@ -7,7 +7,7 @@ on:
   push:
     branches: [main]
   workflow_run:
-    workflows: [Pages]
+    workflows: [Pages, Salud]
     types: [completed]
 
 permissions:
@@ -18,9 +18,10 @@ jobs:
     if: >-
       github.event_name == 'push' ||
       (github.event.workflow_run.conclusion == 'failure' &&
-       (github.event.workflow_run.event == 'push' ||
-        github.event.workflow_run.event == 'workflow_dispatch') &&
-       github.event.workflow_run.head_branch == 'main')
+       github.event.workflow_run.head_branch == 'main' &&
+       (github.event.workflow_run.name == 'Salud' ||
+        github.event.workflow_run.event == 'push' ||
+        github.event.workflow_run.event == 'workflow_dispatch'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

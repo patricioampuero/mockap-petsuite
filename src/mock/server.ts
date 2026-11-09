@@ -9,8 +9,10 @@ import { businessContactSchema, businessProfileSchema, businessReplySchema, user
 import { DIAS_GRACIA, DIAS_PERIODO, PLANES, PLAN_GRATIS, dentroDelLimite, etiquetasLimite, limiteTexto, planPorId, type Limites, type Plan } from '../modules/plans/plans'
 import { PERMISOS_ADMIN, PERMISOS_ASESOR, PERMISOS_DUENO, type ModuloPyme } from '../shared/permissions'
 import { crearCobro } from './orcob'
-import { emitirToken, enviarCorreo, registerSuiteRoutes, segundosDesdeEnvio, usarToken } from './suite'
+import { baseApp, emitirToken, enviarCorreo, registerSuiteRoutes, segundosDesdeEnvio, usarToken } from './suite'
 import { CORREO_SIN_CONFIRMAR, SEGUNDOS_ENTRE_ENVIOS, correoRestablecer, correoVerificacion } from '../shared/cuentas'
+import { correoAvisoQr } from '../shared/avisos'
+import { limitesDe, mensajeDemasiados, STATUS_DEMASIADOS, sumaEvento, type Limite } from '../shared/limites'
 
 z.config(z.locales.es())
 
@@ -498,7 +500,7 @@ on('GET', '/qr/:token', req => {
 })
 
 on('POST', '/qr/:token/mensajes', req => {
-  const { md } = medallaActiva(req.params.token)
+  const { md, m } = medallaActiva(req.params.token)
   const d = parse(z.object({
     mensaje: z.string().trim().min(10, 'El mensaje debe tener al menos 10 caracteres').max(500, 'El mensaje admite hasta 500 caracteres'),
     nombre: z.string().trim().max(80).optional(),
@@ -507,6 +509,12 @@ on('POST', '/qr/:token/mensajes', req => {
     longitud: z.number().min(-180).max(180).optional(),
   }), req.body)
   db.mensajes.push({ id: uid(), medalla_id: md.id, remitente_nombre: d.nombre || null, remitente_contacto: d.contacto || null, mensaje: d.mensaje, latitud: d.latitud != null ? String(d.latitud) : null, longitud: d.longitud != null ? String(d.longitud) : null, estado: 'nuevo', enviado_en: now() })
+  // Aviso al tutor por correo (en la demo, a la bandeja simulada).
+  const tutor = db.usuarios.find(u => u.id === m.tutor_id && u.estado === 'activo')
+  if (tutor) {
+    const c = correoAvisoQr(tutor.nombre_visible, m.nombre, d, baseApp())
+    enviarCorreo(tutor.correo, c.asunto, c.cuerpo, 'aviso_qr', c.detalles)
+  }
   return { ok: true }
 })
 
@@ -1317,7 +1325,21 @@ function match(pattern: string, path: string): Record<string, string> | null {
 
 const wait = () => new Promise(resolve => setTimeout(resolve, 150 + Math.random() * 200))
 
-export async function handle(method: string, fullPath: string, body: unknown, session: Session | null): Promise<unknown> {
+// ---------- Límites de solicitudes (mismas reglas que el API: src/shared/limites.ts) ----------
+const desde = (segundos: number) => new Date(Date.now() - segundos * 1000).toISOString()
+function verificarLimites(limite: Limite) {
+  for (const r of limite.reglas) {
+    if (db.limites.filter(e => e.clave === r.clave && e.ocurrido_en > desde(r.segundos)).length >= r.max) fail(STATUS_DEMASIADOS, mensajeDemasiados(r.segundos))
+  }
+}
+function registrarEvento(limite: Limite) {
+  const ocurrido_en = now(), vigentes = desde(2 * 86_400)
+  db.limites = db.limites.filter(e => e.ocurrido_en >= vigentes)
+  for (const r of limite.reglas) db.limites.push({ clave: r.clave, ocurrido_en })
+}
+
+/** cliente: en el navegador siempre es el mismo ('local'); el API usa la huella de la IP. */
+export async function handle(method: string, fullPath: string, body: unknown, session: Session | null, cliente = 'local'): Promise<unknown> {
   await wait()
   refresh()
   const [path, qs = ''] = fullPath.split('?')
@@ -1326,8 +1348,19 @@ export async function handle(method: string, fullPath: string, body: unknown, se
     if (m !== method) continue
     const params = match(pattern, path)
     if (!params) continue
-    // Se trabaja sobre una copia para que la respuesta nunca comparta referencias con el estado interno.
-    const result = h({ params, query: new URLSearchParams(qs), body: body === undefined ? undefined : structuredClone(body), session })
+    const limite = limitesDe(method, path, body, cliente)
+    if (limite) verificarLimites(limite)
+    let result: unknown
+    try {
+      // Se trabaja sobre una copia para que la respuesta nunca comparta referencias con el estado interno.
+      result = h({ params, query: new URLSearchParams(qs), body: body === undefined ? undefined : structuredClone(body), session })
+    } catch (error) {
+      // Un intento fallido se guarda aunque la ruta no haya cambiado nada más.
+      if (limite && error instanceof ApiError && sumaEvento(limite, error.status)) { refresh(); registrarEvento(limite); save() }
+      throw error
+    }
+    if (limite && sumaEvento(limite, 200)) registrarEvento(limite)
+    if (limite?.limpiarAlExito) db.limites = db.limites.filter(e => e.clave !== limite.limpiarAlExito)
     if (method !== 'GET' || /^\/(qr|pymes|adopciones)\/[^/]+$/.test(path) || path === '/banners') save()
     return result === undefined ? undefined : structuredClone(result)
   }

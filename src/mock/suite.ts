@@ -40,7 +40,7 @@ const avisarAsesores = (asunto: string, cuerpo: string) => db.usuarios.filter(u 
 
 // ---------- Enlaces de cuenta ----------
 // Base de los enlaces: la app de este navegador; en Node (servidor con archivo o pruebas), APP_URL o el Vite local.
-const baseApp = () => typeof location !== 'undefined'
+export const baseApp = () => typeof location !== 'undefined'
   ? `${location.origin}${import.meta.env?.BASE_URL ?? '/'}`
   : (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.APP_URL ?? 'http://localhost:5173/'
 

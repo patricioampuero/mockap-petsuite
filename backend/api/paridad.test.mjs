@@ -158,6 +158,16 @@ test('cuentas: login, registro, sesión y catálogos', async () => {
     await call.login('nueva', 'nueva@petsuite.cl', 'secreta123')
     await call.login('nueva', 'nueva@petsuite.cl', 'nuevaClave123')
     await call('GET', '/auth/yo', undefined, 'nueva')
+
+    // Límites de solicitudes: tras 5 contraseñas incorrectas, esa cuenta queda bloqueada 15 minutos desde ese
+    // cliente, aunque la sexta sea correcta; las demás cuentas siguen entrando.
+    for (let i = 0; i < 5; i++) await call.login('nadie', 'jefe@petsuite.cl', `incorrecta-${i}`)
+    await call.login('jefe', 'jefe@petsuite.cl')
+    await call.login('tutor', 'tutor@petsuite.cl')
+    // Registro, reenvío y recuperación envían correos: 10 por cliente cada hora (en este guion ya van 7).
+    for (let i = 0; i < 3; i++) await call('POST', '/auth/recuperar', { correo: `persona${i}@petsuite.cl` })
+    await call('POST', '/auth/recuperar', { correo: 'persona9@petsuite.cl' })
+    await call('POST', '/auth/registro', { ...nuevo, correo: 'otra@petsuite.cl' })
   })
   assert.ok(pasos > 40)
 })
@@ -243,6 +253,12 @@ test('Ficha Única: mascotas, accesos clínicos, registros con autoría, medalla
     await call('POST', `/qr/${token}/mensajes`, { mensaje: 'Hola' })
     await call('POST', `/qr/${token}/mensajes`, { mensaje: 'Encontré a Luna cerca de la plaza.', nombre: 'Vecina', contacto: '+56911112222', latitud: -40.5741, longitud: -73.1349 })
     await call('POST', `/qr/${token}/mensajes`, { mensaje: 'La vi de nuevo en la costanera.' })
+    // Cada mensaje avisa al tutor por correo (sin proveedor de correo, la bandeja guarda el aviso completo).
+    await call.login('admin', 'admin@petsuite.cl')
+    await call('GET', '/admin/correos', undefined, 'admin', { comparar: lista => lista.filter(c => c.tipo === 'aviso_qr') })
+    // Hasta 5 mensajes por medalla y cliente cada hora: el sexto responde 429.
+    for (let i = 0; i < 3; i++) await call('POST', `/qr/${token}/mensajes`, { mensaje: `Aviso número ${i + 3} desde la plaza.` })
+    await call('POST', `/qr/${token}/mensajes`, { mensaje: 'Un aviso más, ya sobre el límite.' })
     const { data: avisos } = await call('GET', `/mascotas/${luna}/mensajes`, undefined, 'tutor')
     await call('GET', `/mascotas/${luna}/mensajes`, undefined, 'tutor2')
     await call('PATCH', `/mascotas/mensajes/${avisos[0].id}`, { estado: 'leido' }, 'tutor2')
