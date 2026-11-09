@@ -1,6 +1,7 @@
 // Administración y asesoría: resumen, usuarios y suspensiones, moderación, verificación de Pymes y ONG.
 import { z } from 'zod'
 import { DIAS_PERIODO, PLANES, PLAN_GRATIS, planPorId } from '../../src/modules/plans/plans'
+import { FICHA_PUBLICA_SIN_DUENO } from '../../src/shared/fichas'
 import { userSuspensionSchema } from '../../src/shared/validators'
 import { auth, cerrarSesiones, correoDe, enviarCorreo, levantarVencidas } from './auth'
 import { comunasDe, dayOffset, fail, hace, idDe, now, on, parse, uid, una } from './core'
@@ -129,8 +130,9 @@ on('GET', '/admin/pymes', async req => {
   await auth(req, 'admin', 'asesor')
   const estado = req.query.get('estado') || 'pendiente'
   // Pendientes incluye las renovaciones o cambios de plan de Pymes ya verificadas que esperan confirmar su pago.
-  const pymes = await req.sql<Pyme>(`select ${PYME} from pymes p where p.estado_verificacion = $1
-    or ($1 = 'pendiente' and p.estado_verificacion = 'aprobada' and exists (select 1 from pagos pg join suscripciones s on s.id = pg.suscripcion_id where s.pyme_id = p.id and pg.estado = 'pendiente'))
+  // Las fichas públicas no se revisan aquí: se validan cuando su dueño las reclama.
+  const pymes = await req.sql<Pyme>(`select ${PYME} from pymes p where p.origen <> 'publica' and (p.estado_verificacion = $1
+    or ($1 = 'pendiente' and p.estado_verificacion = 'aprobada' and exists (select 1 from pagos pg join suscripciones s on s.id = pg.suscripcion_id where s.pyme_id = p.id and pg.estado = 'pendiente')))
     order by p.creado_en`, [estado])
   const ids = pymes.map(p => p.id), subs = await suscripcionesDe(req.sql, ids), pagos = await pagosDe(req.sql, ids), comunas = await comunasDe(req.sql)
   const resultado = []
@@ -155,6 +157,7 @@ on('PATCH', '/admin/pymes/:id/verificacion', async req => {
   const d = parse(z.object({ decision: z.enum(['aprobar', 'rechazar', 'suspender']) }), req.body)
   const p = await una<Pyme>(req.sql, `select ${PYME} from pymes p where p.id = $1 for update`, [idDe(req.params.id)])
   if (!p) return fail(404, 'Pyme no encontrada')
+  if (p.origen === 'publica') return fail(422, FICHA_PUBLICA_SIN_DUENO)
   const subs = (await suscripcionesDe(req.sql, [p.id])).get(p.id)!
   const pendientes = subs.filter(s => s.estado === 'pendiente')
   const renovacion = p.estado_verificacion === 'aprobada' && pendientes.length > 0 && d.decision !== 'suspender'

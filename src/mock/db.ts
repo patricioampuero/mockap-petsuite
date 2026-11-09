@@ -24,7 +24,8 @@ export type Medalla = { id: string; mascota_id: string; token: string; estado: '
 export type Escaneo = { id: string; medalla_id: string; ocurrido_en: string }
 export type MensajeQr = { id: string; medalla_id: string; remitente_nombre: string | null; remitente_contacto: string | null; mensaje: string; latitud: string | null; longitud: string | null; estado: 'nuevo' | 'leido' | 'respondido'; enviado_en: string }
 export type Acceso = { id: string; mascota_id: string; pyme_id: string; otorgado_por: string; permiso: 'lectura' | 'escritura'; vigente_hasta: string; revocado_en: string | null }
-export type Pyme = { id: string; propietario_id: string; nombre_comercial: string; rut_empresa: string; rubro: Rubro; descripcion: string | null; comuna_id: number; direccion: string | null; latitud: string | null; longitud: string | null; telefono: string | null; whatsapp: string | null; horario: Record<string, string>; servicios: string[]; foto_portada?: string | null; estado_verificacion: Verificacion; creado_en: string }
+// origen 'publica': ficha armada con datos públicos, sin dueño (propietario_id y rut_empresa vacíos; null en la base).
+export type Pyme = { id: string; propietario_id: string; nombre_comercial: string; rut_empresa: string; rubro: Rubro; descripcion: string | null; comuna_id: number; direccion: string | null; latitud: string | null; longitud: string | null; telefono: string | null; whatsapp: string | null; horario: Record<string, string>; servicios: string[]; foto_portada?: string | null; estado_verificacion: Verificacion; origen: 'registro' | 'publica'; fuente: string | null; creado_en: string }
 // Multitenant: una Pyme (empresa) tiene su casa matriz (los datos de la Pyme) y sucursales adicionales.
 export type Sucursal = { id: string; pyme_id: string; nombre: string; comuna_id: number; direccion: string | null; latitud: string | null; longitud: string | null; telefono: string | null; whatsapp: string | null; horario: Record<string, string>; descripcion: string | null; servicios: string[]; creado_en: string }
 // Equipo interno: cuentas de jefes de local o personal clínico con permisos por módulo. sucursal_id null = casa matriz.
@@ -166,7 +167,7 @@ function seed(): Db {
   const pyme = (owner: string, nombre: string, rut: string, rubro: Rubro, comuna: number, direccion: string, lat: number, lng: number, servicios: string[], plan: { id: number; monto: number; inicio: number; fin: number; canal: Pago['canal'] }) => {
     const p: Pyme = {
       id: uid(), propietario_id: owner, nombre_comercial: nombre, rut_empresa: rut, rubro, descripcion: `${nombre}: atención cercana para tu mascota.`, comuna_id: comuna,
-      direccion, latitud: String(lat), longitud: String(lng), telefono: null, whatsapp: null, horario: { 'lun-vie': '09:00-18:00', sab: '10:00-14:00' }, servicios, estado_verificacion: 'aprobada', creado_en: t(),
+      direccion, latitud: String(lat), longitud: String(lng), telefono: null, whatsapp: null, horario: { 'lun-vie': '09:00-18:00', sab: '10:00-14:00' }, servicios, estado_verificacion: 'aprobada', origen: 'registro', fuente: null, creado_en: t(),
     }
     db.pymes.push(p)
     const s: Suscripcion = { id: uid(), pyme_id: p.id, plan_id: plan.id, inicio: dayOffset(plan.inicio), fin: dayOffset(plan.fin), estado: 'activa' }

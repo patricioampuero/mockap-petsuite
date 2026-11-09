@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, Heart, HeartHandshake, Home, MapPinned, Pause, PawPrint, Play, QrCode, Search, ShieldCheck, Store } from 'lucide-react'
 import { api, errorText, iniciales, type Comuna, type PymeResumen } from '../../shared/api'
-import { Photo, assetUrl, rubroFoto } from '../../shared/media'
+import { Photo, assetUrl, fotoNegocio } from '../../shared/media'
 import { ErrorState } from '../../shared/feedback'
 import { BannerStrip } from '../promotions/promotions'
 import { categoriaIcono } from '../directory/explore'
@@ -57,7 +57,7 @@ function Buscador({ comunas }: { comunas: Comuna[] }) {
 
 function NegocioDestacado({ p }: { p: PymeResumen }) {
   return <a className="landing-business" href={`#local/${p.id}`}>
-    <div className="explore-card-media"><Photo src={p.foto_portada || rubroFoto[p.rubro] || rubroFoto.otro} nombre={p.nombre_comercial} className="explore-card-photo" /><span className="explore-flag is-sponsored">Patrocinado</span></div>
+    <div className="explore-card-media"><Photo src={fotoNegocio(p)} nombre={p.nombre_comercial} className="explore-card-photo" /><span className="explore-flag is-sponsored">Patrocinado</span></div>
     <strong>{p.nombre_comercial}</strong>
     <span>{rubroLabel[p.rubro] || p.rubro} · {p.comuna}</span>
     {!!p.servicios?.length && <small>{p.servicios.slice(0, 3).join(' · ')}</small>}

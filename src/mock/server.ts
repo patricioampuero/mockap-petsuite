@@ -12,6 +12,7 @@ import { crearCobro } from './orcob'
 import { baseApp, emitirToken, enviarCorreo, registerSuiteRoutes, segundosDesdeEnvio, usarToken } from './suite'
 import { CORREO_SIN_CONFIRMAR, SEGUNDOS_ENTRE_ENVIOS, correoRestablecer, correoVerificacion } from '../shared/cuentas'
 import { correoAvisoQr } from '../shared/avisos'
+import { CONSULTAS_NO_DISPONIBLES, FICHA_PUBLICA_SIN_DUENO } from '../shared/fichas'
 import { limitesDe, mensajeDemasiados, STATUS_DEMASIADOS, sumaEvento, type Limite } from '../shared/limites'
 
 z.config(z.locales.es())
@@ -144,9 +145,11 @@ const pymeResumen = (p: Pyme) => {
     direccion: p.direccion, latitud: p.latitud, longitud: p.longitud, telefono: p.telefono, whatsapp: p.whatsapp, horario: p.horario,
     foto_portada: plan.beneficios.portada ? p.foto_portada ?? null : null,
     servicios: p.servicios ?? [], ofertas: itemsPublicos(p.id).filter(i => ofertaVigente(i.oferta)).length, destacado: plan.beneficios.destacado,
-    sucursales: sucursalesPublicas(p), cupones: cuponesDe(c => c.pyme_id === p.id),
+    sucursales: sucursalesPublicas(p), cupones: cuponesDe(c => c.pyme_id === p.id), sin_reclamar: p.origen === 'publica',
   }
 }
+// En Explorar: negocios validados y fichas con información pública (sin dueño, en gris y sin sello).
+const enVitrina = (p: Pyme) => p.estado_verificacion === 'aprobada' || p.origen === 'publica'
 
 // ---------- Esquemas ----------
 // Autoría de los registros clínicos: se conserva al guardar la ficha completa.
@@ -522,7 +525,7 @@ on('POST', '/qr/:token/mensajes', req => {
 // La comuna coincide con la casa matriz o con cualquier sucursal visible. Oro primero, luego Plata, luego el resto.
 on('GET', '/pymes', req => {
   const comuna = req.query.get('comuna'), rubro = req.query.get('rubro')
-  return db.pymes.filter(p => p.estado_verificacion === 'aprobada' && (!rubro || p.rubro === rubro)).map(pymeResumen)
+  return db.pymes.filter(p => enVitrina(p) && (!rubro || p.rubro === rubro)).map(pymeResumen)
     .filter(r => !comuna || r.comuna === comuna || r.sucursales.some(s => s.comuna === comuna))
     .sort((a, b) => b.destacado - a.destacado || a.nombre_comercial.localeCompare(b.nombre_comercial))
 })
@@ -567,7 +570,7 @@ on('POST', '/pymes', req => {
   const p: Pyme = {
     id: uid(), propietario_id: u.id, nombre_comercial: d.nombre_comercial, rut_empresa: d.rut_empresa, rubro: d.rubro, descripcion: d.descripcion ?? null, comuna_id: d.comuna_id,
     direccion: d.direccion ?? null, latitud: d.latitud != null ? String(d.latitud) : null, longitud: d.longitud != null ? String(d.longitud) : null,
-    telefono: d.telefono ?? null, whatsapp: d.whatsapp ?? null, horario: {}, servicios: [], estado_verificacion: 'pendiente', creado_en: now(),
+    telefono: d.telefono ?? null, whatsapp: d.whatsapp ?? null, horario: {}, servicios: [], estado_verificacion: 'pendiente', origen: 'registro', fuente: null, creado_en: now(),
   }
   db.pymes.push(p)
   // Gratis no genera cobro: la Pyme queda en plan Gratis al aprobarse. Un plan pagado espera la verificación del pago.
@@ -587,7 +590,7 @@ function registrarPago(p: Pyme, plan: Plan, inicio: string, canal: 'transferenci
 }
 
 on('GET', '/pymes/:id', req => {
-  const p = db.pymes.find(x => x.id === req.params.id && x.estado_verificacion === 'aprobada')
+  const p = db.pymes.find(x => x.id === req.params.id && enVitrina(x))
   if (!p) return fail(404, 'No encontrada')
   db.eventos.push({ id: uid(), pyme_id: p.id, item_id: null, tipo: 'visita_perfil', ocurrido_en: now() })
   // Las ofertas se muestran solo mientras están vigentes (y dentro del cupo del plan), y primero.
@@ -599,7 +602,7 @@ on('GET', '/pymes/:id', req => {
 
 on('POST', '/pymes/:id/eventos', req => {
   const d = parse(z.object({ tipo: z.enum(['vista_item', 'clic_contacto', 'clic_whatsapp']), item_id: z.string().optional() }), req.body)
-  if (db.pymes.some(p => p.id === req.params.id && p.estado_verificacion === 'aprobada')) db.eventos.push({ id: uid(), pyme_id: req.params.id, item_id: d.item_id ?? null, tipo: d.tipo, ocurrido_en: now() })
+  if (db.pymes.some(p => p.id === req.params.id && enVitrina(p))) db.eventos.push({ id: uid(), pyme_id: req.params.id, item_id: d.item_id ?? null, tipo: d.tipo, ocurrido_en: now() })
   return { ok: true }
 })
 
@@ -634,6 +637,8 @@ on('PATCH', '/pymes/:id/perfil', req => {
 
 on('POST', '/pymes/:id/contactos', req => {
   const u = auth(req, 'tutor')
+  // Una ficha pública no tiene a nadie del local que lea la consulta.
+  if (db.pymes.some(x => x.id === req.params.id && x.origen === 'publica')) return fail(422, CONSULTAS_NO_DISPONIBLES)
   const p = db.pymes.find(x => x.id === req.params.id && x.estado_verificacion === 'aprobada' && suscripcionActiva(x.id))
   if (!p) return fail(404, 'Negocio no disponible')
   const d = parse(businessContactSchema, req.body)
@@ -1246,7 +1251,8 @@ on('GET', '/admin/pymes', req => {
   auth(req, 'admin', 'asesor')
   const estado = req.query.get('estado') || 'pendiente'
   // Pendientes incluye las renovaciones o cambios de plan de Pymes ya verificadas que esperan confirmar su pago.
-  return db.pymes.filter(p => p.estado_verificacion === estado || (estado === 'pendiente' && p.estado_verificacion === 'aprobada' && pagoPendiente(p.id)))
+  // Las fichas públicas no se revisan aquí: se validan cuando su dueño las reclama.
+  return db.pymes.filter(p => p.origen !== 'publica' && (p.estado_verificacion === estado || (estado === 'pendiente' && p.estado_verificacion === 'aprobada' && pagoPendiente(p.id))))
     .sort((a, b) => a.creado_en.localeCompare(b.creado_en)).map(p => {
       const pend = pagoPendiente(p.id), s = ultimaSuscripcion(p.id)
       const pago = pend ?? (s && db.pagos.find(pg => pg.suscripcion_id === s.id))
@@ -1265,6 +1271,7 @@ on('PATCH', '/admin/pymes/:id/verificacion', req => {
   const d = parse(z.object({ decision: z.enum(['aprobar', 'rechazar', 'suspender']) }), req.body)
   const p = db.pymes.find(x => x.id === req.params.id)
   if (!p) return fail(404, 'Pyme no encontrada')
+  if (p.origen === 'publica') return fail(422, FICHA_PUBLICA_SIN_DUENO)
   const subs = db.suscripciones.filter(s => s.pyme_id === p.id), ids = new Set(subs.map(s => s.id))
   const pendientes = subs.filter(s => s.estado === 'pendiente')
   const renovacion = p.estado_verificacion === 'aprobada' && pendientes.length > 0 && d.decision !== 'suspender'

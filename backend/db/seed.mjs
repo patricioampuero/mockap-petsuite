@@ -41,7 +41,8 @@ async function filas(db) {
     ['medallas', db.medallas],
     ['escaneos', db.escaneos.map(({ id: _, ...e }) => e)],
     ['mensajes_qr', db.mensajes],
-    ['pymes', db.pymes],
+    // Las fichas públicas del mock tienen dueño y RUT vacíos; en la base son null.
+    ['pymes', db.pymes.map(p => ({ ...p, propietario_id: p.propietario_id || null, rut_empresa: p.rut_empresa || null }))],
     ['accesos', db.accesos],
     ['sucursales', db.sucursales],
     ['miembros', db.miembros],

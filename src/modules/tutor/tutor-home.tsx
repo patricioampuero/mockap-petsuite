@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowRight, CalendarDays, Check, Clock3, MapPin, PawPrint, Tag, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { api, errorText, fechaLarga, getSession, hoy, type Comuna, type PymeResumen } from '../../shared/api'
-import { Photo, rubroFoto } from '../../shared/media'
+import { Photo, fotoNegocio } from '../../shared/media'
 import { EmptyState, ErrorState, LoadingState } from '../../shared/feedback'
 import { buscar, rubroLabel, type Filtros } from '../directory/explore-search'
 import { isOpenNow, statusForBusiness } from '../directory/directory-hours'
@@ -85,7 +85,7 @@ export function NearbyServices({ pymes, comuna, onPyme, onAll }: { pymes: Lista<
       : !pymes.data ? <LoadingState label="Cargando negocios" rows={2} />
       : !lista.length ? <EmptyState title="Aún no hay negocios" description="Cuando se validen negocios Pet-Care, aparecerán aquí." />
       : <ul className="tutor-rail">{lista.slice(0, 8).map(p => { const status = statusForBusiness(p, now); return <li key={p.id}><button type="button" className="tutor-place" onClick={() => onPyme(p.id)}>
-        <span className="tutor-place-media"><Photo src={p.foto_portada || rubroFoto[p.rubro] || rubroFoto.otro} nombre={p.nombre_comercial} className="tutor-place-photo" /><span className="tutor-place-kind">{rubroLabel[p.rubro] || p.rubro}</span></span>
+        <span className="tutor-place-media"><Photo src={fotoNegocio(p)} nombre={p.nombre_comercial} className="tutor-place-photo" /><span className="tutor-place-kind">{rubroLabel[p.rubro] || p.rubro}</span></span>
         <strong>{p.nombre_comercial}</strong>
         <small className={status.open ? 'is-open' : status.known ? 'is-closed' : undefined}><Clock3 size={13} aria-hidden="true" /> {status.text}</small>
         {(!!p.ofertas || !!p.cupones?.length) && <span className="chip chip-warn"><Tag size={12} aria-hidden="true" /> {p.ofertas ? `${p.ofertas} ${p.ofertas === 1 ? 'oferta' : 'ofertas'}` : 'Cupón ONG'}</span>}

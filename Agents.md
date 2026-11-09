@@ -956,3 +956,45 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - La paridad suma pasos con 429 en el ingreso, los correos y los mensajes del QR, además del aviso en la bandeja. Ambos backends responden lo mismo.
   - La prueba de Vercel comprueba que la función empaquetada, sin base, responde 503 en `/healthz`.
   - Sin cambios de interfaz: no se revisó en el navegador.
+
+### Fichas con información pública en Explorar
+
+- Fecha: 2026-11-09.
+- Rama: `patricioampuero/fichas-sin-reclamar`, creada sobre `patricioampuero/aviso-tutor-y-limites`, que aún no está en `main`. Se fusiona después de ella.
+- Archivos agregados: `backend/db/migrations/007_fichas_publicas.sql`, `backend/db/cargar-fichas.mjs`, `backend/db/fichas.test.mjs` y `src/shared/fichas.ts`.
+- Archivos modificados:
+  - API: `backend/api/negocio.ts`, `backend/api/pymes.ts`, `backend/api/admin.ts` y `backend/db/seed.mjs`.
+  - Mock: `src/mock/server.ts` y `src/mock/db.ts`.
+  - Interfaz: `src/modules/directory/explore.tsx`, `src/modules/directory/public-business.tsx`, `src/modules/directory/directory.tsx`, `src/modules/directory/explore-search.ts`, `src/modules/tutor/tutor-home.tsx`, `src/modules/landing/landing.tsx`, `src/shared/media.tsx`, `src/shared/api.ts` y `src/styles/design-pro.css`.
+  - Otros: `backend/api/paridad.test.mjs`, `package.json` y `Agents.md`.
+- Cambio realizado:
+  - Una **ficha con información pública** es un negocio real que aún no se inscribe. Muestra solo su nombre, dirección, teléfono, rubro y ubicación, sacados de fuentes públicas. Es lo que se decidió el 29 de octubre: los locales sin validar se ven en gris.
+  - **Migración 007**: columnas `origen` (`registro` o `publica`) y `fuente`. El dueño y el RUT pasan a ser opcionales solo para las fichas públicas. Tres restricciones las cuidan: una ficha pública no tiene dueño, siempre tiene fuente y nunca queda validada.
+  - **Explorar, el perfil y el directorio**:
+    - Las fichas públicas aparecen en gris, con la etiqueta punteada «Información pública» en vez del sello «Validado por PetSuite», y con un pin punteado en el mapa.
+    - No llevan foto de muestra, porque se podría creer que es ese local: muestran sus iniciales.
+    - No muestran catálogo.
+    - En vez del formulario de consulta, el perfil explica que el negocio aún no recibe consultas por PetSuite y ofrece «Crear cuenta de Pyme» para reclamar la ficha.
+    - A igual coincidencia, los negocios validados van primero. El plan sigue sin cambiar el orden.
+  - **API y mock**:
+    - `GET /pymes` y `GET /pymes/:id` incluyen las fichas públicas con `sin_reclamar: true`, sin RUT ni dueño. Cuentan visitas y clics.
+    - Una consulta enviada a una ficha pública responde 422.
+    - El asesor no las ve entre las Pymes por revisar, y si intenta validar una, el API responde 422.
+  - **`npm run db:cargar-fichas -- <json> [--aplicar]`** (`backend/db/cargar-fichas.mjs`):
+    - Sin `--aplicar` es una simulación que no escribe nada.
+    - Valida cada ficha: comuna existente, teléfono en formato +56 y fuente obligatoria.
+    - Omite los negocios que ya existen con el mismo nombre en la misma comuna.
+    - `quitarFicha` borra una ficha pública, si el negocio lo pide, y nunca toca un negocio inscrito.
+  - La demo no trae fichas públicas, a pedido del usuario: solo existen en la versión real. La prueba de paridad agrega una a los datos de partida de ambos backends.
+- Motivo: el usuario pidió que la versión real no se vea vacía, con negocios reales de la región. Se cargan como fichas con información pública, porque cargarlos como si se hubieran inscrito habría engañado a los usuarios y a esos negocios.
+- Pendiente:
+  - Aplicar las migraciones 006 y 007 en la base real antes de fusionar.
+  - Cargar las fichas investigadas en la base real con el script.
+  - Herramienta del asesor para unir una ficha pública a la cuenta de la Pyme que la reclama: por ahora se hace a mano.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 47 de 47, con 2 pruebas nuevas en `backend/db/fichas.test.mjs`:
+    - carga desde JSON en simulación y con `--aplicar`, sin duplicados aunque cambien las tildes o las mayúsculas, rechazo de una comuna desconocida o un teléfono mal escrito, cómo la muestra el API y cómo se quita;
+    - las tres restricciones de la base.
+  - La paridad suma la ficha pública: aparece en la lista y en su perfil, cuenta un clic, y la consulta y la validación responden 422.
+  - Revisión en Chromium sobre la build de Pages, con una ficha pública agregada al almacenamiento del navegador: Explorar y el perfil a 1366 y 390 px, en claro y oscuro. Sin errores de JavaScript ni desplazamiento horizontal.

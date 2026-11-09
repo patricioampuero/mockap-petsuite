@@ -7,8 +7,9 @@ import { crearCobro } from '../../src/mock/orcob'
 import { auth, correoDe, enviarCorreo } from './auth'
 import { comunasDe, dayOffset, fail, fecha, hace, idDe, now, on, parse, uid, una } from './core'
 import type { Sql } from './db'
+import { CONSULTAS_NO_DISPONIBLES } from '../../src/shared/fichas'
 import {
-  cargarVitrina, estadoPlanDe, exigirCupo, ITEM, itemDe, itemsPublicosDe, miPyme, ofertaVigente, permisosEnPyme, planDe, PYME, pymeResumen, pymeResumenDe,
+  cargarVitrina, EN_VITRINA, estadoPlanDe, exigirCupo, ITEM, itemDe, itemsPublicosDe, miPyme, ofertaVigente, permisosEnPyme, planDe, PYME, pymeResumen, pymeResumenDe,
   suscripcionesDe, ultimaDe, usoPyme, type Item, type Pyme, type Suscripcion,
 } from './negocio'
 
@@ -20,7 +21,7 @@ export const pagoPendiente = (sql: Sql, pymeId: string) => una<Pago>(sql, `selec
 // Directorio: la comuna coincide con la casa matriz o con cualquier sucursal visible. Oro primero, luego Plata, luego el resto.
 on('GET', '/pymes', async req => {
   const comuna = req.query.get('comuna'), rubro = req.query.get('rubro')
-  const pymes = await req.sql<Pyme>(`select ${PYME} from pymes p where p.estado_verificacion = 'aprobada'${rubro ? ' and p.rubro = $1' : ''} order by p.creado_en`, rubro ? [rubro] : [])
+  const pymes = await req.sql<Pyme>(`select ${PYME} from pymes p where ${EN_VITRINA}${rubro ? ' and p.rubro = $1' : ''} order by p.creado_en`, rubro ? [rubro] : [])
   const v = await cargarVitrina(req.sql, pymes)
   return pymes.map(p => pymeResumenDe(p, v))
     .filter(r => !comuna || r.comuna === comuna || r.sucursales.some(s => s.comuna === comuna))
@@ -73,7 +74,7 @@ on('POST', '/pymes', async req => {
   const p: Pyme = {
     id: uid(), propietario_id: u.id, nombre_comercial: d.nombre_comercial, rut_empresa: d.rut_empresa, rubro: d.rubro, descripcion: d.descripcion ?? null, comuna_id: d.comuna_id,
     direccion: d.direccion ?? null, latitud: d.latitud != null ? String(d.latitud) : null, longitud: d.longitud != null ? String(d.longitud) : null,
-    telefono: d.telefono ?? null, whatsapp: d.whatsapp ?? null, horario: {}, servicios: [], foto_portada: null, estado_verificacion: 'pendiente', creado_en: now(),
+    telefono: d.telefono ?? null, whatsapp: d.whatsapp ?? null, horario: {}, servicios: [], foto_portada: null, estado_verificacion: 'pendiente', creado_en: now(), origen: 'registro',
   }
   await req.sql(`insert into pymes (id, propietario_id, nombre_comercial, rut_empresa, rubro, descripcion, comuna_id, direccion, latitud, longitud, telefono, whatsapp, estado_verificacion, creado_en)
     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
@@ -96,7 +97,7 @@ async function registrarPago(sql: Sql, p: Pyme, plan: Plan, inicio: string, cana
 }
 
 on('GET', '/pymes/:id', async req => {
-  const p = await una<Pyme>(req.sql, `select ${PYME} from pymes p where p.id = $1 and p.estado_verificacion = 'aprobada'`, [idDe(req.params.id)])
+  const p = await una<Pyme>(req.sql, `select ${PYME} from pymes p where p.id = $1 and ${EN_VITRINA}`, [idDe(req.params.id)])
   if (!p) return fail(404, 'No encontrada')
   await req.sql("insert into eventos_pyme (pyme_id, tipo, ocurrido_en) values ($1, 'visita_perfil', $2)", [p.id, now()])
   const v = await cargarVitrina(req.sql, [p])
@@ -111,7 +112,7 @@ on('POST', '/pymes/:id/eventos', async req => {
   const d = parse(z.object({ tipo: z.enum(['vista_item', 'clic_contacto', 'clic_whatsapp']), item_id: z.string().optional() }), req.body)
   // Un ítem que no es de este negocio se registra sin ítem (las métricas solo cuentan ítems existentes).
   await req.sql(`insert into eventos_pyme (pyme_id, item_id, tipo, ocurrido_en)
-    select p.id, (select i.id from items_catalogo i where i.id = $2 and i.pyme_id = p.id), $3, $4 from pymes p where p.id = $1 and p.estado_verificacion = 'aprobada'`,
+    select p.id, (select i.id from items_catalogo i where i.id = $2 and i.pyme_id = p.id), $3, $4 from pymes p where p.id = $1 and ${EN_VITRINA}`,
   [idDe(req.params.id), idDe(d.item_id), d.tipo, now()])
   return { ok: true }
 })
@@ -141,6 +142,8 @@ on('PATCH', '/pymes/:id/perfil', async req => {
 // ---------- Consultas de clientes ----------
 on('POST', '/pymes/:id/contactos', async req => {
   const u = await auth(req, 'tutor')
+  // Una ficha pública no tiene a nadie del local que lea la consulta.
+  if (await una(req.sql, "select 1 from pymes where id = $1 and origen = 'publica'", [idDe(req.params.id)])) return fail(422, CONSULTAS_NO_DISPONIBLES)
   const p = await una<{ id: string }>(req.sql, "select id from pymes where id = $1 and estado_verificacion = 'aprobada'", [idDe(req.params.id)])
   if (!p) return fail(404, 'Negocio no disponible')
   const d = parse(businessContactSchema, req.body)

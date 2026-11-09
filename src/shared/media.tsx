@@ -12,6 +12,13 @@ export const rubroFoto: Record<string, string> = {
 // Las rutas de /public se resuelven contra la base del sitio (en GitHub Pages es /mockap-petsuite/).
 export const assetUrl = (src: string) => src.startsWith('/') ? `${import.meta.env.BASE_URL}${src.slice(1)}` : src
 
+/**
+ * Foto de un negocio en Explorar: su portada o, si no tiene, una foto de muestra de su rubro. Una ficha con información
+ * pública no lleva foto de muestra (se podría creer que es su local): muestra sus iniciales.
+ */
+export const fotoNegocio = (p: { foto_portada?: string | null; rubro: string; sin_reclamar?: boolean }) =>
+  p.sin_reclamar ? null : p.foto_portada || rubroFoto[p.rubro] || rubroFoto.otro
+
 /** Foto de mascota o animal; si no hay foto, muestra sus iniciales. */
 export function Photo({ src, nombre, className = 'pet-photo' }: { src?: string | null; nombre: string; className?: string }) {
   if (!src) return <div className={className}>{iniciales(nombre)}</div>

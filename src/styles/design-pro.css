@@ -778,3 +778,16 @@ body:has(.public-site) { min-width: 0; }
   .tutor-route:hover, .tutor-place:hover .tutor-place-photo, .tutor-animal:hover .tutor-animal-photo { transform: none; }
   .tutor-live > span { animation: none; }
 }
+
+/* ---------- Fichas con información pública (sin dueño ni sello): en gris, borde punteado ---------- */
+.explore-card.is-unclaimed .explore-card-photo, .business-card.is-unclaimed .business-thumb { filter: grayscale(0.9); opacity: 0.85; }
+.explore-card.is-unclaimed .explore-card-title strong, .business-card.is-unclaimed .business-card-top strong { color: var(--color-text-secondary); }
+.chip.explore-unclaimed { flex: none; border: 1px dashed var(--color-text-muted); background: var(--color-bg-subtle); color: var(--color-text-secondary); font-size: 0.72rem; font-weight: 750; }
+.explore-pin.is-unclaimed { border-style: dashed; border-color: var(--color-text-muted); color: var(--color-text-secondary); }
+.explore-legend i.is-unclaimed { border-style: dashed; border-color: var(--color-text-muted); }
+.local-seal.is-unclaimed summary { border: 1px dashed var(--color-text-muted); background: var(--color-bg-subtle); color: var(--color-text-secondary); }
+[data-mode="dark"] .local-seal.is-unclaimed summary { color: var(--color-text-secondary); }
+.local-card-claim h2 { margin-top: 4px; }
+.local-unclaimed-note { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0; padding: 10px 12px; border: 1px dashed var(--color-text-muted); border-radius: 12px; background: var(--color-bg-subtle); color: var(--color-text-secondary); font-size: 0.88rem; }
+/* Ficha pública sin foto: iniciales sobre un fondo neutro, en vez de una foto de muestra */
+:is(.explore-card-photo, .local-cover, .business-thumb, .tutor-place-photo, .business-hero):not(.has-photo) { display: grid; place-items: center; background: var(--color-bg-subtle); color: var(--color-text-secondary); font: 800 2rem var(--font-body); letter-spacing: 0.04em; }

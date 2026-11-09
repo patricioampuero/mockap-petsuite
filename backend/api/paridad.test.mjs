@@ -77,8 +77,18 @@ function cliente(handle) {
 }
 
 // Corre el guion contra ambos backends con los mismos datos y compara paso a paso.
+// Ficha con información pública: la demo no trae ninguna (solo existen en la versión real), así que la prueba
+// agrega una a los datos de partida de ambos backends.
+const FICHA_PUBLICA = {
+  propietario_id: '', nombre_comercial: 'Forrajería Campo Verde', rut_empresa: '', rubro: 'tienda', descripcion: null, comuna_id: 1,
+  direccion: 'Avenida Ejemplo 812, Osorno', latitud: '-40.5812', longitud: '-73.1188', telefono: '+56642000000', whatsapp: null, horario: {}, servicios: [],
+  estado_verificacion: 'pendiente', origen: 'publica', fuente: 'https://ejemplo.test/forrajeria',
+}
+
 async function paridad(guion) {
   mockDb.resetDemo()
+  mockDb.db.pymes.push({ ...FICHA_PUBLICA, id: crypto.randomUUID(), creado_en: mockDb.now() })
+  mockDb.save()
   const semilla = structuredClone(mockDb.db)
   const { database, client } = await pgliteDatabase()
   try {
@@ -296,6 +306,15 @@ test('directorio y Pymes: perfil, consultas, catálogo, métricas, suscripción,
     await call('GET', '/pymes?comuna=Osorno&rubro=veterinaria')
     await call('GET', '/pymes?rubro=inexistente')
     for (const quien of ['tienda', 'veterinaria', 'peluqueria', 'jefe', 'clinico', 'tutor']) await call('GET', '/pymes/mias', undefined, quien)
+
+    // Ficha con información pública: aparece en Explorar sin sello, cuenta visitas y clics, pero no recibe
+    // consultas ni se puede validar sin su dueño, y no aparece entre las Pymes por revisar.
+    const publica = idDe(semilla.pymes, 'nombre_comercial', 'Forrajería Campo Verde')
+    await call('GET', '/pymes?rubro=tienda')
+    await call('GET', `/pymes/${publica}`)
+    await call('POST', `/pymes/${publica}/eventos`, { tipo: 'clic_contacto' })
+    await call('POST', `/pymes/${publica}/contactos`, { mensaje: '¿Tienen alimento para conejos?' }, 'tutor')
+    await call('PATCH', `/admin/pymes/${publica}/verificacion`, { decision: 'aprobar' }, 'asesor')
 
     // Vitrina pública y eventos para métricas.
     await call('GET', `/pymes/${shop}`)
