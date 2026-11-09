@@ -36,7 +36,11 @@ export function enviarCorreo(para: string, asunto: string, cuerpo: string, tipo:
   if (para) db.correos.push({ id: uid(), para, asunto, cuerpo, tipo, enviado_en: now() })
 }
 const correoDe = (usuarioId: string) => db.usuarios.find(u => u.id === usuarioId)?.correo ?? ''
-const avisarAsesores = (asunto: string, cuerpo: string) => db.usuarios.filter(u => u.rol === 'asesor' && u.estado === 'activo').forEach(a => enviarCorreo(a.correo, asunto, cuerpo, 'aprobacion'))
+/** Avisa a los asesores activos; si no hay ninguno, a los administradores (igual que el API). */
+export const avisarAsesores = (asunto: string, cuerpo: string) => {
+  const asesores = db.usuarios.filter(u => u.rol === 'asesor' && u.estado === 'activo')
+  ;(asesores.length ? asesores : db.usuarios.filter(u => u.rol === 'admin' && u.estado === 'activo')).forEach(a => enviarCorreo(a.correo, asunto, cuerpo, 'aprobacion'))
+}
 
 // ---------- Enlaces de cuenta ----------
 // Base de los enlaces: la app de este navegador; en Node (servidor con archivo o pruebas), APP_URL o el Vite local.

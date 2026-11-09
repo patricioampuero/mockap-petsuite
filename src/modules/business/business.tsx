@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, BadgeCheck, Crown, Eye, MousePointerClick, Package, Pencil, ShoppingBag, Tag, Ticket, X } from 'lucide-react'
-import { api, clp, errorText, fechaCorta, fechaLarga, hoy, ofertaVigente, type Comuna, type ItemCatalogo } from '../../shared/api'
+import { api, clp, errorText, fechaCorta, fechaLarga, hoy, modoDemo, ofertaVigente, type Comuna, type ItemCatalogo } from '../../shared/api'
+import { instruccionesTransferencia } from '../../shared/pagos'
 import { BusinessProfile } from './business-profile'
 import { BusinessContacts } from './business-contacts'
 import { Branches, Team } from './team'
@@ -68,7 +69,6 @@ export function RegisterPyme({ onDone }: { onDone: () => void }) {
       return
     }
     const d = parsed.data
-    if (plan.precio_mensual_clp > 0 && form.canal_pago === 'transferencia' && form.referencia_pago.trim().length < 3) { setError('Ingresa la referencia de la transferencia o elige pagar con Orcob'); setErrorField('referencia_pago'); requestAnimationFrame(() => document.getElementById('register-referencia_pago')?.focus()); return }
     setBusy(true); setError('')
     try {
       const r = await api<{ codigo_orcob: string | null }>('/pymes', { method: 'POST', body: { nombre_comercial: d.nombre_comercial, rut_empresa: d.rut_empresa, rubro: d.rubro, comuna_id: d.comuna_id, plan_id: d.plan_id, canal_pago: form.canal_pago, ...(d.direccion && { direccion: d.direccion }), ...(d.telefono && { telefono: d.telefono }), ...(d.whatsapp && { whatsapp: d.whatsapp }), ...(d.descripcion && { descripcion: d.descripcion }), ...(d.referencia_pago && { referencia_pago: d.referencia_pago }), ...(d.latitud !== null && { latitud: d.latitud }), ...(d.longitud !== null && { longitud: d.longitud }) } })
@@ -88,11 +88,17 @@ export function RegisterPyme({ onDone }: { onDone: () => void }) {
       <label>WhatsApp<input {...fieldProps('whatsapp')} value={form.whatsapp} onChange={e => set('whatsapp', e.target.value)} placeholder="56912345678" /></label>
       <label>Latitud (mapa, opcional)<input {...fieldProps('latitud')} value={form.latitud} onChange={e => set('latitud', e.target.value)} placeholder="-40.5735" /></label>
       <label>Longitud (mapa, opcional)<input {...fieldProps('longitud')} value={form.longitud} onChange={e => set('longitud', e.target.value)} placeholder="-73.1335" /></label>
-      {plan.precio_mensual_clp > 0 && <><label>Forma de pago<select value={form.canal_pago} onChange={e => set('canal_pago', e.target.value)}><option value="transferencia">Transferencia (la verifica un asesor)</option><option value="orcob">Código de recaudación Orcob</option></select></label>
-        {form.canal_pago === 'transferencia' && <label>Referencia de la transferencia<input {...fieldProps('referencia_pago')} value={form.referencia_pago} onChange={e => set('referencia_pago', e.target.value)} placeholder="N.º o glosa" /></label>}</>}
+      {plan.precio_mensual_clp > 0 && <>{modoDemo && <label>Forma de pago<select value={form.canal_pago} onChange={e => set('canal_pago', e.target.value)}><option value="transferencia">Transferencia (la verifica un asesor)</option><option value="orcob">Código de recaudación Orcob (demo)</option></select></label>}
+        {form.canal_pago === 'transferencia' && <label>Referencia de la transferencia (opcional)<input {...fieldProps('referencia_pago')} value={form.referencia_pago} onChange={e => set('referencia_pago', e.target.value)} placeholder="Si ya transferiste: N.º o glosa" /></label>}</>}
     </div>
+      {plan.precio_mensual_clp > 0 && form.canal_pago === 'transferencia' && <PagoTransferencia monto={plan.precio_mensual_clp} negocio={form.nombre_comercial.trim() || 'tu negocio'} />}
       <label className="composer-label">Descripción<textarea {...fieldProps('descripcion')} rows={3} maxLength={1000} value={form.descripcion} onChange={e => set('descripcion', e.target.value)} /></label>
       {error && <div className="form-error" id={errorField ? 'register-field-error' : undefined} role={errorField ? undefined : 'alert'}>{error}</div>}<div className="settings-actions"><span className="muted">Plan {plan.nombre}{plan.precio_mensual_clp ? ` · ${clp(plan.precio_mensual_clp)}/mes` : ''}</span><button className="primary" disabled={busy}>{busy ? 'Enviando...' : 'Enviar para verificación'}</button></div></form></section>
+}
+
+/** Cómo pagar un plan por transferencia: datos de la cuenta de PetSuite o, si aún no están, el aviso de que llegarán por correo. */
+function PagoTransferencia({ monto, negocio }: { monto: number; negocio: string }) {
+  return <div className="payment-instructions"><strong>Cómo pagar</strong><ul>{instruccionesTransferencia(monto, negocio).map(l => <li key={l}>{l}</li>)}</ul><p className="muted">Te enviamos esto también por correo. El plan se activa cuando un asesor confirma el pago.</p></div>
 }
 
 function StatusBanner({ pyme }: { pyme: MiPyme }) {
@@ -259,25 +265,25 @@ function Subscription({ pyme, onChange }: { pyme: MiPyme; onChange: () => Promis
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setError(''); setDone('')
     if (!elegido) return
-    if (form.canal === 'transferencia' && form.referencia.trim().length < 3) { setError('Ingresa la referencia de la transferencia'); return }
     try {
-      const r = await api<{ inicio: string; fin: string; codigo_orcob: string | null }>(`/pymes/${pyme.id}/suscripcion`, { method: 'POST', body: { plan_id: elegido.id, canal: form.canal, ...(form.canal === 'transferencia' && { referencia_pago: form.referencia.trim() }) } })
-      setDone(r.codigo_orcob ? `Paga ${clp(elegido.precio_mensual_clp)} con el código Orcob ${r.codigo_orcob}. El plan ${elegido.nombre} se activa apenas Orcob confirme el pago (del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}).` : `Solicitud enviada. Cuando un asesor confirme la transferencia, el plan ${elegido.nombre} irá del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}.`)
+      const r = await api<{ inicio: string; fin: string; codigo_orcob: string | null }>(`/pymes/${pyme.id}/suscripcion`, { method: 'POST', body: { plan_id: elegido.id, canal: form.canal, ...(form.canal === 'transferencia' && form.referencia.trim() && { referencia_pago: form.referencia.trim() }) } })
+      setDone(r.codigo_orcob ? `Paga ${clp(elegido.precio_mensual_clp)} con el código Orcob ${r.codigo_orcob}. El plan ${elegido.nombre} se activa apenas Orcob confirme el pago (del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}).` : `Solicitud enviada. Te enviamos por correo cómo pagar. Cuando un asesor confirme la transferencia, el plan ${elegido.nombre} irá del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}.`)
       setForm({ ...form, referencia: '' }); setElegido(null); await reload()
     } catch (e) { setError(errorText(e)) }
   }
   const simularOrcob = async (pago: Pago) => { setError(''); try { await api(`/pymes/${pyme.id}/pagos/${pago.id}/orcob-confirmado`, { method: 'POST' }); setDone('Orcob confirmó el pago: tu plan quedó activo.'); await reload() } catch (e) { setError(errorText(e)) } }
-  return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">MODELO DE SUSCRIPCIÓN</p><h1>Suscripción</h1><p className="muted">Tarifa plana mensual en cuatro capas, sin comisiones por venta. Paga por transferencia (la confirma un asesor) o con el código de recaudación de Orcob (se activa sola al confirmarse el pago).</p></div><PlanBadge plan={pyme.plan} /></div>
+  return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">MODELO DE SUSCRIPCIÓN</p><h1>Suscripción</h1><p className="muted">Tarifa plana mensual en cuatro capas, sin comisiones por venta. Paga por transferencia: un asesor la confirma y activa tu plan.{modoDemo && ' En la demo también puedes probar el código de recaudación de Orcob.'}</p></div><PlanBadge plan={pyme.plan} /></div>
     <StatusBanner pyme={pyme} />
     <PlanAlert pyme={pyme} />
     {error && <div className="form-error" role="alert">{error}</div>}{done && <p className="save-message" role="status">{done}</p>}
-    {pendiente && <div className="alert-card"><div className="alert-icon"><AlertCircle size={22} /></div><div><strong>Pago en revisión · {clp(pendiente.monto_clp)} por {pendiente.canal === 'orcob' ? 'Orcob' : 'transferencia'}</strong><p>{pendiente.canal === 'orcob' ? `Código de pago Orcob: ${pendiente.codigo_orcob}. En producción, Orcob avisa el pago a PetSuite y el plan se activa automáticamente.` : 'Un asesor PetSuite confirmará la transferencia. Podrás enviar otra solicitud cuando la confirme o la rechace.'}</p>{pendiente.canal === 'orcob' && <button className="secondary" onClick={() => simularOrcob(pendiente)}>Simular aviso de pago de Orcob (demo)</button>}</div></div>}
+    {pendiente && <div className="alert-card"><div className="alert-icon"><AlertCircle size={22} /></div><div><strong>Pago en revisión · {clp(pendiente.monto_clp)} por {pendiente.canal === 'orcob' ? 'Orcob' : 'transferencia'}</strong><p>{pendiente.canal === 'orcob' ? `Código de pago Orcob: ${pendiente.codigo_orcob}. En producción, Orcob avisa el pago a PetSuite y el plan se activa automáticamente.` : 'Un asesor PetSuite confirmará la transferencia. Podrás enviar otra solicitud cuando la confirme o la rechace.'}</p>{pendiente.canal === 'transferencia' && <PagoTransferencia monto={pendiente.monto_clp} negocio={pyme.nombre_comercial} />}{pendiente.canal === 'orcob' && modoDemo && <button className="secondary" onClick={() => simularOrcob(pendiente)}>Simular aviso de pago de Orcob (demo)</button>}</div></div>}
     <div className="settings-card"><div className="settings-card-heading"><div><p className="eyebrow">COMPARA LAS CUATRO CAPAS</p><h2>Gratis, Bronce, Plata y Oro</h2><p className="muted">Al renovar o subir de plan, el nuevo periodo empieza cuando termina el que ya pagaste. Si no renuevas, tienes {DIAS_GRACIA} días de gracia y luego pasas a Gratis sin perder datos.</p></div></div>
       <PlanGrid actual={pyme.plan.id} onChoose={pyme.estado_verificacion === 'aprobada' && !pendiente ? p => { setElegido(p); setDone(''); setError('') } : undefined} chooseLabel="Cambiar a" />
       {pyme.estado_verificacion === 'aprobada' && !pendiente && pyme.plan.precio_mensual_clp > 0 && <div className="settings-actions"><span className="muted">¿Quieres mantener tu plan?</span><button className="secondary" onClick={() => setElegido(pyme.plan)}>Renovar {pyme.plan.nombre}</button></div>}</div>
     {elegido && (elegido.precio_mensual_clp === 0 ? <div className="alert-card"><div><strong>El plan Gratis no requiere pago</strong><p>Se aplica automáticamente cuando termina tu periodo pagado y sus días de gracia. Solo deja de renovar.</p><button className="secondary" onClick={() => setElegido(null)}>Entendido</button></div></div>
       : <form className="settings-card" onSubmit={submit} noValidate><div className="settings-card-heading"><div><p className="eyebrow">{elegido.id === pyme.plan.id ? 'RENOVAR' : 'CAMBIAR DE PLAN'}</p><h2>Plan {elegido.nombre} · {clp(elegido.precio_mensual_clp)} al mes</h2></div></div>
-        <div className="settings-form-grid"><label>Forma de pago<select value={form.canal} onChange={e => setForm({ ...form, canal: e.target.value as 'transferencia' | 'orcob' })}><option value="transferencia">Transferencia bancaria</option><option value="orcob">Código de recaudación Orcob</option></select></label>{form.canal === 'transferencia' && <label>Referencia de la transferencia<input value={form.referencia} onChange={e => setForm({ ...form, referencia: e.target.value })} placeholder="N.º o glosa" /></label>}</div>
+        <div className="settings-form-grid">{modoDemo && <label>Forma de pago<select value={form.canal} onChange={e => setForm({ ...form, canal: e.target.value as 'transferencia' | 'orcob' })}><option value="transferencia">Transferencia bancaria</option><option value="orcob">Código de recaudación Orcob (demo)</option></select></label>}{form.canal === 'transferencia' && <label>Referencia de la transferencia (opcional)<input value={form.referencia} onChange={e => setForm({ ...form, referencia: e.target.value })} placeholder="Si ya transferiste: N.º o glosa" /></label>}</div>
+        {form.canal === 'transferencia' && <PagoTransferencia monto={elegido.precio_mensual_clp} negocio={pyme.nombre_comercial} />}
         <div className="settings-actions"><button type="button" className="text-button" onClick={() => setElegido(null)}>Cancelar</button><button className="primary">{form.canal === 'orcob' ? 'Generar código de pago' : 'Enviar solicitud'}</button></div></form>)}
     <div className="section-heading"><h3>Historial de periodos y pagos</h3></div>
     <div className="catalog-list">{rows?.map(s => <div className="catalog-item" key={s.id}><div><strong><PlanBadge plan={{ codigo: s.plan_codigo, nombre: s.plan }} /> {clp(s.precio_mensual_clp)} al mes</strong><p>{fechaLarga(s.inicio)} al {fechaLarga(s.fin)}</p>{s.pagos.map(p => <small key={p.id}>Pago {clp(p.monto_clp)} · {p.canal === 'orcob' ? `Orcob${p.codigo_orcob ? ` (código ${p.codigo_orcob})` : ''}` : 'transferencia'} · {p.estado}{p.referencia ? ` · ${p.referencia}` : ''}</small>)}</div><span className={`user-status ${s.estado === 'activa' ? 'activo' : 'suspendido'}`}>{periodoTexto[s.estado] || s.estado}</span></div>)}{rows && rows.length === 0 && <div className="empty-results">Aún no has contratado un plan pagado: estás en Gratis.</div>}</div></section>

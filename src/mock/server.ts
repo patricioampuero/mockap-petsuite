@@ -9,7 +9,8 @@ import { businessContactSchema, businessProfileSchema, businessReplySchema, user
 import { DIAS_GRACIA, DIAS_PERIODO, PLANES, PLAN_GRATIS, dentroDelLimite, etiquetasLimite, limiteTexto, planPorId, type Limites, type Plan } from '../modules/plans/plans'
 import { PERMISOS_ADMIN, PERMISOS_ASESOR, PERMISOS_DUENO, type ModuloPyme } from '../shared/permissions'
 import { crearCobro } from './orcob'
-import { baseApp, emitirToken, enviarCorreo, registerSuiteRoutes, segundosDesdeEnvio, usarToken } from './suite'
+import { avisarAsesores, baseApp, emitirToken, enviarCorreo, registerSuiteRoutes, segundosDesdeEnvio, usarToken } from './suite'
+import { avisoSolicitud, correoSolicitudPlan } from '../shared/pagos'
 import { CORREO_SIN_CONFIRMAR, SEGUNDOS_ENTRE_ENVIOS, correoRestablecer, correoVerificacion } from '../shared/cuentas'
 import { correoAvisoQr } from '../shared/avisos'
 import { CONSULTAS_NO_DISPONIBLES, FICHA_PUBLICA_SIN_DUENO } from '../shared/fichas'
@@ -574,7 +575,15 @@ on('POST', '/pymes', req => {
   }
   db.pymes.push(p)
   // Gratis no genera cobro: la Pyme queda en plan Gratis al aprobarse. Un plan pagado espera la verificación del pago.
-  const cobro = plan.precio_mensual_clp > 0 ? registrarPago(p, plan, dayOffset(0), d.canal_pago, d.referencia_pago ?? null) : null
+  // En la demo Orcob está simulado; el API real lo rechaza (src/shared/pagos.ts).
+  const cobro = plan.precio_mensual_clp > 0 ? registrarPago(p, plan, dayOffset(0), d.canal_pago, d.referencia_pago || null) : null
+  // El equipo revisa la solicitud; la Pyme recibe cómo pagar si eligió un plan por transferencia.
+  const aviso = avisoSolicitud('alta', p.nombre_comercial, p.rut_empresa, comunaNombre(p.comuna_id), plan.nombre, plan.precio_mensual_clp, d.canal_pago, cobro?.canal === 'transferencia' ? cobro.referencia : null)
+  avisarAsesores(aviso.asunto, aviso.cuerpo)
+  if (cobro?.canal === 'transferencia') {
+    const c = correoSolicitudPlan(p.nombre_comercial, plan.nombre, plan.precio_mensual_clp, !!cobro.referencia)
+    enviarCorreo(u.correo, c.asunto, c.cuerpo, 'cobranza')
+  }
   return { id: p.id, estado_verificacion: p.estado_verificacion, codigo_orcob: cobro?.codigo_orcob ?? null }
 })
 
@@ -793,8 +802,9 @@ on('POST', '/pymes/:id/suscripcion', req => {
   const d = parse(z.object({
     plan_id: z.number().int().positive(),
     canal: z.enum(['transferencia', 'orcob']).default('transferencia'),
+    // Opcional: la Pyme puede pedir el plan y transferir después de recibir los datos; el asesor confirma el pago.
     referencia_pago: z.string().trim().max(60).optional(),
-  }).refine(x => x.canal === 'orcob' || (x.referencia_pago ?? '').length >= 3, { message: 'Ingresa la referencia de la transferencia', path: ['referencia_pago'] }), req.body)
+  }), req.body)
   if (p.estado_verificacion !== 'aprobada') return fail(422, 'Tu negocio debe estar verificado para renovar o cambiar de plan')
   if (pagoPendiente(p.id)) return fail(409, 'Ya tienes una solicitud de pago en revisión')
   const plan = PLANES.find(x => x.id === d.plan_id)
@@ -802,7 +812,13 @@ on('POST', '/pymes/:id/suscripcion', req => {
   if (plan.precio_mensual_clp === 0) return fail(422, 'El plan Gratis no requiere pago: rige automáticamente cuando termina tu periodo pagado')
   const actual = db.suscripciones.filter(s => s.pyme_id === p.id && s.estado === 'activa').sort((a, b) => b.fin.localeCompare(a.fin))[0]
   const inicio = actual && actual.fin > dayOffset(0) ? actual.fin : dayOffset(0)
-  const r = registrarPago(p, plan, inicio, d.canal, d.referencia_pago ?? null)
+  const r = registrarPago(p, plan, inicio, d.canal, d.referencia_pago || null)
+  const aviso = avisoSolicitud('plan', p.nombre_comercial, p.rut_empresa, '', plan.nombre, plan.precio_mensual_clp, d.canal, d.canal === 'transferencia' ? r.referencia : null)
+  avisarAsesores(aviso.asunto, aviso.cuerpo)
+  if (d.canal === 'transferencia') {
+    const c = correoSolicitudPlan(p.nombre_comercial, plan.nombre, plan.precio_mensual_clp, !!r.referencia)
+    enviarCorreo(db.usuarios.find(x => x.id === p.propietario_id)?.correo ?? '', c.asunto, c.cuerpo, 'cobranza')
+  }
   return { id: r.suscripcion.id, inicio: r.suscripcion.inicio, fin: r.suscripcion.fin, pago_id: r.id, codigo_orcob: r.codigo_orcob }
 })
 

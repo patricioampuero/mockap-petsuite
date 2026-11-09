@@ -16,6 +16,8 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 
 const values = new Map()
 globalThis.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }
+// La demo (mock) simula Orcob; el API solo con esta variable. La versión real sin Orcob se prueba en pagos.test.mjs.
+process.env.ORCOB_SIMULADO = '1'
 
 const mock = await import('../../src/mock/server.ts')
 const mockDb = await import('../../src/mock/db.ts')

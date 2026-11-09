@@ -4,10 +4,11 @@ import type { Oferta } from '../../src/shared/api'
 import { DIAS_PERIODO, PLANES, PLAN_GRATIS, planPorId, type Plan } from '../../src/modules/plans/plans'
 import { businessContactSchema, businessProfileSchema, businessReplySchema } from '../../src/shared/validators'
 import { crearCobro } from '../../src/mock/orcob'
-import { auth, correoDe, enviarCorreo } from './auth'
+import { auth, avisarAsesores, correoDe, enviarCorreo, orcobDisponible } from './auth'
 import { comunasDe, dayOffset, fail, fecha, hace, idDe, now, on, parse, uid, una } from './core'
 import type { Sql } from './db'
 import { CONSULTAS_NO_DISPONIBLES } from '../../src/shared/fichas'
+import { avisoSolicitud, correoSolicitudPlan, ORCOB_NO_DISPONIBLE, SOLO_ORCOB_CONFIRMA } from '../../src/shared/pagos'
 import {
   cargarVitrina, EN_VITRINA, estadoPlanDe, exigirCupo, ITEM, itemDe, itemsPublicosDe, miPyme, ofertaVigente, permisosEnPyme, planDe, PYME, pymeResumen, pymeResumenDe,
   suscripcionesDe, ultimaDe, usoPyme, type Item, type Pyme, type Suscripcion,
@@ -70,7 +71,9 @@ on('POST', '/pymes', async req => {
   if (await una(req.sql, 'select 1 from pymes where lower(rut_empresa) = lower($1)', [d.rut_empresa])) return fail(409, 'Ese RUT de empresa ya está registrado')
   const plan = PLANES.find(p => p.id === d.plan_id)
   if (!plan) return fail(400, 'Plan no disponible')
-  if (!(await comunasDe(req.sql)).has(d.comuna_id)) return fail(400, 'Comuna no válida')
+  const comunas = await comunasDe(req.sql)
+  if (!comunas.has(d.comuna_id)) return fail(400, 'Comuna no válida')
+  if (plan.precio_mensual_clp > 0 && d.canal_pago === 'orcob' && !orcobDisponible()) return fail(422, ORCOB_NO_DISPONIBLE)
   const p: Pyme = {
     id: uid(), propietario_id: u.id, nombre_comercial: d.nombre_comercial, rut_empresa: d.rut_empresa, rubro: d.rubro, descripcion: d.descripcion ?? null, comuna_id: d.comuna_id,
     direccion: d.direccion ?? null, latitud: d.latitud != null ? String(d.latitud) : null, longitud: d.longitud != null ? String(d.longitud) : null,
@@ -80,7 +83,14 @@ on('POST', '/pymes', async req => {
     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
   [p.id, p.propietario_id, p.nombre_comercial, p.rut_empresa, p.rubro, p.descripcion, p.comuna_id, p.direccion, p.latitud, p.longitud, p.telefono, p.whatsapp, p.estado_verificacion, p.creado_en])
   // Gratis no genera cobro: la Pyme queda en plan Gratis al aprobarse. Un plan pagado espera la verificación del pago.
-  const cobro = plan.precio_mensual_clp > 0 ? await registrarPago(req.sql, p, plan, dayOffset(0), d.canal_pago, d.referencia_pago ?? null) : null
+  const cobro = plan.precio_mensual_clp > 0 ? await registrarPago(req.sql, p, plan, dayOffset(0), d.canal_pago, d.referencia_pago || null) : null
+  // El equipo revisa la solicitud; la Pyme recibe cómo pagar si eligió un plan por transferencia.
+  const aviso = avisoSolicitud('alta', p.nombre_comercial, p.rut_empresa, comunas.get(p.comuna_id) ?? '', plan.nombre, plan.precio_mensual_clp, d.canal_pago, cobro?.canal === 'transferencia' ? cobro.referencia : null)
+  await avisarAsesores(req.sql, aviso.asunto, aviso.cuerpo)
+  if (cobro?.canal === 'transferencia') {
+    const c = correoSolicitudPlan(p.nombre_comercial, plan.nombre, plan.precio_mensual_clp, !!cobro.referencia)
+    await enviarCorreo(req.sql, u.correo, c.asunto, c.cuerpo, 'cobranza')
+  }
   return { id: p.id, estado_verificacion: p.estado_verificacion, codigo_orcob: cobro?.codigo_orcob ?? null }
 })
 
@@ -313,8 +323,10 @@ on('POST', '/pymes/:id/suscripcion', async req => {
   const d = parse(z.object({
     plan_id: z.number().int().positive(),
     canal: z.enum(['transferencia', 'orcob']).default('transferencia'),
+    // Opcional: la Pyme puede pedir el plan y transferir después de recibir los datos; el asesor confirma el pago.
     referencia_pago: z.string().trim().max(60).optional(),
-  }).refine(x => x.canal === 'orcob' || (x.referencia_pago ?? '').length >= 3, { message: 'Ingresa la referencia de la transferencia', path: ['referencia_pago'] }), req.body)
+  }), req.body)
+  if (d.canal === 'orcob' && !orcobDisponible()) return fail(422, ORCOB_NO_DISPONIBLE)
   if (p.estado_verificacion !== 'aprobada') return fail(422, 'Tu negocio debe estar verificado para renovar o cambiar de plan')
   if (await pagoPendiente(req.sql, p.id)) return fail(409, 'Ya tienes una solicitud de pago en revisión')
   const plan = PLANES.find(x => x.id === d.plan_id)
@@ -322,13 +334,21 @@ on('POST', '/pymes/:id/suscripcion', async req => {
   if (plan.precio_mensual_clp === 0) return fail(422, 'El plan Gratis no requiere pago: rige automáticamente cuando termina tu periodo pagado')
   const actual = await una<Suscripcion>(req.sql, "select * from suscripciones where pyme_id = $1 and estado = 'activa' order by fin desc limit 1", [p.id])
   const inicio = actual && actual.fin > dayOffset(0) ? actual.fin : dayOffset(0)
-  const r = await registrarPago(req.sql, p, plan, inicio, d.canal, d.referencia_pago ?? null)
+  const r = await registrarPago(req.sql, p, plan, inicio, d.canal, d.referencia_pago || null)
+  const aviso = avisoSolicitud('plan', p.nombre_comercial, p.rut_empresa, '', plan.nombre, plan.precio_mensual_clp, d.canal, d.canal === 'transferencia' ? r.referencia : null)
+  await avisarAsesores(req.sql, aviso.asunto, aviso.cuerpo)
+  if (d.canal === 'transferencia') {
+    const c = correoSolicitudPlan(p.nombre_comercial, plan.nombre, plan.precio_mensual_clp, !!r.referencia)
+    await enviarCorreo(req.sql, await correoDe(req.sql, p.propietario_id), c.asunto, c.cuerpo, 'cobranza')
+  }
   return { id: r.suscripcion.id, inicio: r.suscripcion.inicio, fin: r.suscripcion.fin, pago_id: r.id, codigo_orcob: r.codigo_orcob }
 })
 
 // Demostración del aviso (webhook) de Orcob: confirma el pago y activa el periodo sin intervención del asesor.
+// Solo existe con Orcob simulado: en la versión real nadie puede activar un plan con esta ruta.
 on('POST', '/pymes/:id/pagos/:pagoId/orcob-confirmado', async req => {
   const p = await miPyme(req, 'suscripcion')
+  if (!orcobDisponible()) return fail(403, SOLO_ORCOB_CONFIRMA)
   const pago = await una<Pago>(req.sql, "select pg.* from pagos pg join suscripciones s on s.id = pg.suscripcion_id where pg.id = $1 and pg.canal = 'orcob' and pg.estado = 'pendiente' and s.pyme_id = $2 for update", [idDe(req.params.pagoId), p.id])
   const s = pago && await una<Suscripcion>(req.sql, 'select * from suscripciones where id = $1', [pago.suscripcion_id])
   if (!pago || !s) return fail(404, 'No hay un cobro Orcob pendiente con ese identificador')

@@ -43,7 +43,7 @@ Estas reglas resumen errores que ya ocurrieron. Léelas antes de cada tarea.
 
 ### Estructura del código
 
-- `src/shared/`: núcleo común (`api`, `validators`, `permissions`, `media`, `feedback`, `accessibility`, `share`, `errors`, `legal`, `cuentas`, `limites`, `avisos`, `profile-cover`, `metric`).
+- `src/shared/`: núcleo común (`api`, `validators`, `permissions`, `media`, `feedback`, `accessibility`, `share`, `errors`, `legal`, `cuentas`, `limites`, `avisos`, `fichas`, `pagos`, `profile-cover`, `metric`).
 - `src/styles/`: hojas de estilo.
 - `src/modules/<área>/`: una carpeta por área (landing, tutor, community, directory, business, clinical, ong, plans, promotions, advisor, admin, privacy, auth).
 - `src/mock/`: API simulada en el navegador.
@@ -85,6 +85,7 @@ PetSuite dejó de ser solo una demostración. La demo, con el mock y la clave `p
 - Reenviar la confirmación y recuperar la contraseña responden lo mismo exista o no la cuenta.
 - Los textos, plazos y mensajes de las cuentas están en `src/shared/cuentas.ts`, compartido por el mock, el API y el frontend.
 - Los botones de cuentas de prueba y «Datos de demostración» solo aparecen en la demo (`modoDemo`, sin `VITE_API_URL`).
+- Orcob está simulado: solo funciona en la demo y en el API con `ORCOB_SIMULADO=1` (pruebas). En la versión real los planes se pagan por transferencia, que confirma un asesor; los datos de la cuenta van en `DATOS_TRANSFERENCIA` (`src/shared/pagos.ts`).
 
 ### Verificación antes de terminar
 
@@ -998,3 +999,40 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
     - las tres restricciones de la base.
   - La paridad suma la ficha pública: aparece en la lista y en su perfil, cuenta un clic, y la consulta y la validación responden 422.
   - Revisión en Chromium sobre la build de Pages, con una ficha pública agregada al almacenamiento del navegador: Explorar y el perfil a 1366 y 390 px, en claro y oscuro. Sin errores de JavaScript ni desplazamiento horizontal.
+
+### Alta de negocios y solicitudes de plan en la versión real
+
+- Fecha: 2026-11-09.
+- Rama: `patricioampuero/solicitudes-pyme-real`, creada sobre `patricioampuero/fichas-sin-reclamar`. Se fusiona después de ella.
+- Archivos agregados: `src/shared/pagos.ts` y `backend/api/pagos.test.mjs`.
+- Archivos modificados:
+  - API: `backend/api/pymes.ts` y `backend/api/auth.ts`.
+  - Mock: `src/mock/server.ts` y `src/mock/suite.ts`.
+  - Interfaz: `src/modules/business/business.tsx` y `src/styles/design-pro.css`.
+  - Otros: `backend/api/paridad.test.mjs`, `package.json` y `Agents.md` (estructura y regla de Orcob).
+- Cambio realizado:
+  - **Agujero cerrado.** La ruta que simula el aviso de pago de Orcob (`POST /pymes/:id/pagos/:pagoId/orcob-confirmado`) la podía llamar la propia Pyme. En la versión real, cualquier negocio podía activarse un plan pagado sin pagar. Ahora el API solo acepta Orcob con `ORCOB_SIMULADO=1`, que usan las pruebas. Sin esa variable, elegir Orcob responde 422 y esa ruta responde 403. La demo (mock) sigue simulándolo.
+  - **Pago por transferencia.**
+    - En la versión real, el alta y la suscripción ofrecen solo transferencia y muestran «Cómo pagar» con el monto.
+    - Mientras `DATOS_TRANSFERENCIA` (`src/shared/pagos.ts`) no tenga la cuenta de PetSuite, el texto dice que un asesor enviará los datos.
+    - La referencia de la transferencia pasa a ser opcional: la Pyme puede pedir el plan y pagar después, y el asesor confirma el pago.
+    - El selector de Orcob y «Simular aviso de pago» quedan solo en la demo.
+  - **Avisos.**
+    - El alta de un negocio y cada solicitud de plan avisan al equipo con el negocio, el RUT, el plan, el monto y la referencia. Antes no avisaban a nadie, ni en el mock ni en el API.
+    - La Pyme recibe por correo las instrucciones de pago.
+    - `avisarAsesores` escribe a los administradores cuando no hay asesores activos, como pasa hoy en la base real. Esto vale también para banners, convenios y perfiles de ONG.
+- Motivo: el usuario pidió revisar cómo una Pyme envía la solicitud de su perfil y la de su suscripción. En la versión real el pago dependía de un Orcob simulado que la Pyme podía confirmar sola, no había a qué cuenta transferir y nadie se enteraba de las solicitudes.
+- Pendiente:
+  - Completar `DATOS_TRANSFERENCIA` con la cuenta real.
+  - Crear asesores en la base real (`backend/db/crear-admin.mjs --asesor`). Mientras no haya, los avisos van al administrador.
+  - La derivación de deudas a Orcob del asesor sigue siendo simulada.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 48 de 48. La prueba nueva `pagos.test.mjs` corre sin Orcob simulado y comprueba:
+    - el alta con Orcob responde 422;
+    - el alta por transferencia funciona sin referencia;
+    - sin asesores, el aviso le llega al administrador;
+    - la Pyme recibe el monto y cómo pagar;
+    - una Pyme validada no puede usar Orcob, y confirmar un pago Orcob responde 403.
+  - La paridad sigue igual en ambos backends, con Orcob simulado en el API y la referencia ahora opcional.
+  - Revisión en Chromium con una build con `VITE_API_URL` contra `backend/server.mjs`: el alta de una cuenta de Pyme nueva con el plan Oro y el cambio de plan de Huellitas Osorno, a 1366 y 390 px, en claro y oscuro. Sin menciones de Orcob, con «Cómo pagar», sin errores de JavaScript ni desplazamiento horizontal.

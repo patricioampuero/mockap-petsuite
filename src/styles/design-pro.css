@@ -791,3 +791,8 @@ body:has(.public-site) { min-width: 0; }
 .local-unclaimed-note { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0; padding: 10px 12px; border: 1px dashed var(--color-text-muted); border-radius: 12px; background: var(--color-bg-subtle); color: var(--color-text-secondary); font-size: 0.88rem; }
 /* Ficha pública sin foto: iniciales sobre un fondo neutro, en vez de una foto de muestra */
 :is(.explore-card-photo, .local-cover, .business-thumb, .tutor-place-photo, .business-hero):not(.has-photo) { display: grid; place-items: center; background: var(--color-bg-subtle); color: var(--color-text-secondary); font: 800 2rem var(--font-body); letter-spacing: 0.04em; }
+
+/* Instrucciones para pagar un plan por transferencia (alta de negocio y suscripción) */
+.payment-instructions { display: grid; gap: 6px; margin: 4px 0 12px; padding: 12px 14px; border: 1px solid var(--color-border-subtle); border-radius: 12px; background: var(--color-bg-subtle); }
+.payment-instructions ul { margin: 0; padding-left: 18px; display: grid; gap: 2px; }
+.payment-instructions p { margin: 0; font-size: 0.85rem; }

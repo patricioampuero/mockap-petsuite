@@ -149,7 +149,12 @@ export async function usarToken(sql: Sql, token: string, tipos: TipoToken[]) {
 export async function correoDe(sql: Sql, usuarioId: string | null | undefined) {
   return usuarioId ? (await una<{ correo: string }>(sql, 'select correo from usuarios where id = $1', [usuarioId]))?.correo ?? '' : ''
 }
+/** Avisa a los asesores activos; si todavía no hay ninguno (base real recién creada), a los administradores. */
 export async function avisarAsesores(sql: Sql, asunto: string, cuerpo: string) {
-  const asesores = await sql<{ correo: string }>("select correo from usuarios where rol = 'asesor' and estado = 'activo' order by creado_en")
-  for (const a of asesores) await enviarCorreo(sql, a.correo, asunto, cuerpo, 'aprobacion')
+  let equipo = await sql<{ correo: string }>("select correo from usuarios where rol = 'asesor' and estado = 'activo' order by creado_en")
+  if (!equipo.length) equipo = await sql<{ correo: string }>("select correo from usuarios where rol = 'admin' and estado = 'activo' order by creado_en")
+  for (const a of equipo) await enviarCorreo(sql, a.correo, asunto, cuerpo, 'aprobacion')
 }
+
+/** Orcob está simulado: el API lo acepta solo con ORCOB_SIMULADO=1 (pruebas). En la versión real se paga por transferencia. */
+export const orcobDisponible = () => process.env.ORCOB_SIMULADO === '1'
