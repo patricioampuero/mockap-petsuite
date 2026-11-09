@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import { Clock3, List, Map as MapIcon, Scissors, Search, ShieldCheck, ShoppingBag, Stethoscope, Syringe, Tag } from 'lucide-react'
 import { api, errorText, type Comuna, type PymeResumen } from '../../shared/api'
-import { Photo, rubroFoto } from '../../shared/media'
+import { Photo, fotoNegocio } from '../../shared/media'
 import { EmptyState, ErrorState, LoadingState } from '../../shared/feedback'
+import { FICHA_PUBLICA } from '../../shared/fichas'
 import { PublicFooter, PublicHeader } from '../landing/public-layout'
 import { isOpenNow, statusForBusiness, statusForSchedule } from './directory-hours'
 import { CATEGORIAS, SELLO, buscar, filtrosDesdeHash, hashExplorar, nivelPin, normalizar, patrocinados, rubroLabel, type Categoria, type Filtros } from './explore-search'
@@ -53,7 +54,7 @@ export function ExploreMap({ places, now, activeId = null, onSelect, numbered = 
     markers.current = []
     const points: L.LatLngTuple[] = []
     places.forEach((p, i) => lugares(p, now).forEach(l => {
-      const pin = elemento('span', `explore-pin tier-${nivelPin(p)}`, numbered ? String(i + 1) : l.etiqueta)
+      const pin = elemento('span', `explore-pin tier-${nivelPin(p)}${p.sin_reclamar ? ' is-unclaimed' : ''}`, numbered ? String(i + 1) : l.etiqueta)
       const marker = L.marker([l.lat, l.lng], { title: l.nombre, riseOnHover: true, icon: L.divIcon({ className: 'explore-pin-icon', html: pin, iconSize: undefined, iconAnchor: [0, 0] }) })
         .bindTooltip(tarjetaPin(l), { direction: 'top', offset: [0, -20], className: 'explore-tooltip', opacity: 1 })
         .on('click', () => select.current?.(p))
@@ -85,13 +86,15 @@ export function ExploreMap({ places, now, activeId = null, onSelect, numbered = 
 function ExploreCard({ p, n, now, patrocinado = false, onHover }: { p: PymeResumen; n?: number; now: Date; patrocinado?: boolean; onHover: (id: string | null) => void }) {
   const status = statusForBusiness(p, now)
   const sucursales = p.sucursales?.length ?? 0
-  return <a className={`explore-card tier-${nivelPin(p)}`} href={`#local/${p.id}`} onMouseEnter={() => onHover(p.id)} onMouseLeave={() => onHover(null)} onFocus={() => onHover(p.id)} onBlur={() => onHover(null)}>
+  return <a className={`explore-card tier-${nivelPin(p)}${p.sin_reclamar ? ' is-unclaimed' : ''}`} href={`#local/${p.id}`} onMouseEnter={() => onHover(p.id)} onMouseLeave={() => onHover(null)} onFocus={() => onHover(p.id)} onBlur={() => onHover(null)}>
     <div className="explore-card-media">
-      <Photo src={p.foto_portada || rubroFoto[p.rubro] || rubroFoto.otro} nombre={p.nombre_comercial} className="explore-card-photo" />
+      <Photo src={fotoNegocio(p)} nombre={p.nombre_comercial} className="explore-card-photo" />
       {patrocinado ? <span className="explore-flag is-sponsored">Patrocinado</span> : n ? <span className={`explore-flag explore-num tier-${nivelPin(p)}`} aria-hidden="true">{n}</span> : null}
     </div>
     <div className="explore-card-body">
-      <div className="explore-card-title"><strong>{p.nombre_comercial}</strong><span className="explore-valid" title={SELLO.nombre}><ShieldCheck size={16} aria-hidden="true" /><span className="sr-only">{SELLO.nombre}</span></span></div>
+      <div className="explore-card-title"><strong>{p.nombre_comercial}</strong>{p.sin_reclamar
+        ? <span className="chip explore-unclaimed" title={FICHA_PUBLICA.detalle}>{FICHA_PUBLICA.etiqueta}</span>
+        : <span className="explore-valid" title={SELLO.nombre}><ShieldCheck size={16} aria-hidden="true" /><span className="sr-only">{SELLO.nombre}</span></span>}</div>
       <span className="explore-card-meta">{rubroLabel[p.rubro] || p.rubro} · {p.comuna}{sucursales ? ` · +${sucursales} ${sucursales === 1 ? 'sucursal' : 'sucursales'}` : ''}</span>
       {!!p.servicios?.length && <span className="explore-card-services">{p.servicios.slice(0, 3).join(' · ')}</span>}
       <span className={`explore-card-status${status.open ? ' is-open' : status.known ? ' is-closed' : ''}`}><Clock3 size={14} aria-hidden="true" /> {status.text}</span>
@@ -164,7 +167,7 @@ export function ExplorePage({ hash }: { hash: string }) {
         </section>
         <aside className="explore-map" aria-label="Mapa">
           <ExploreMap places={resultados} now={now} activeId={activo} visible={vista === 'mapa'} onSelect={p => { window.location.hash = `#local/${p.id}` }} />
-          <p className="explore-legend"><span><i className="tier-oro" />Plan Oro</span><span><i className="tier-plata" />Plan Plata</span><span><i className="tier-base" />Otros negocios validados</span></p>
+          <p className="explore-legend"><span><i className="tier-oro" />Plan Oro</span><span><i className="tier-plata" />Plan Plata</span><span><i className="tier-base" />Otros negocios validados</span><span title={FICHA_PUBLICA.detalle}><i className="is-unclaimed" />{FICHA_PUBLICA.etiqueta}</span></p>
         </aside>
         <button type="button" className="explore-view-toggle" onClick={() => setVista(vista === 'lista' ? 'mapa' : 'lista')}>{vista === 'lista' ? <><MapIcon size={18} aria-hidden="true" /> Mapa</> : <><List size={18} aria-hidden="true" /> Lista</>}</button>
       </div>}

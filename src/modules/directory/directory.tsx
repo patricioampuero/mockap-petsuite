@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Building2, ChevronRight, Clock3, Crown, MapPin, MessageCircle, Navigation, Phone, Search, Tag } from 'lucide-react'
+import { Building2, ChevronRight, Clock3, Crown, Info, MapPin, MessageCircle, Navigation, Phone, Search, Tag } from 'lucide-react'
 import { BannerStrip, CouponList } from '../promotions/promotions'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { Photo, rubroFoto } from '../../shared/media'
+import { Photo, fotoNegocio } from '../../shared/media'
 import { api, clp, errorText, fechaCorta, type ItemCatalogo, type PymePerfil, type PymeResumen, type Comuna, type SucursalPublica } from '../../shared/api'
 import { businessContactSchema } from '../../shared/validators'
 import { EmptyState, ErrorState, LoadingState } from '../../shared/feedback'
+import { FICHA_PUBLICA } from '../../shared/fichas'
 import { useModalFocus } from '../../shared/accessibility'
 import { directionsUrl, isOpenNow, statusForBusiness, statusForSchedule } from './directory-hours'
 import { SELLO, puntaje, rubroLabel } from './explore-search'
@@ -52,13 +53,16 @@ function PlacesMap({ places, onSelect }: { places: PymeResumen[]; onSelect: (p: 
   return <div ref={box} className="leaflet-box" role="region" aria-label="Mapa de negocios Pet-Care" />
 }
 
-export function DirectoryView({ initialPyme, onOpened }: { initialPyme?: string | null; onOpened?: () => void } = {}) {
+/** Filtros con que se abre el directorio desde un atajo, por ejemplo «Veterinarias» en el Inicio del tutor. */
+export type DirectorioInicial = { rubro?: string; comuna?: string; ofertas?: boolean }
+
+export function DirectoryView({ initialPyme, onOpened, initialFilters }: { initialPyme?: string | null; onOpened?: () => void; initialFilters?: DirectorioInicial | null } = {}) {
   const [places, setPlaces] = useState<PymeResumen[] | null>(null)
   const [comunas, setComunas] = useState<Comuna[]>([])
-  const [comuna, setComuna] = useState('')
-  const [rubro, setRubro] = useState('')
+  const [comuna, setComuna] = useState(initialFilters?.comuna ?? '')
+  const [rubro, setRubro] = useState(initialFilters?.rubro ?? '')
   const [query, setQuery] = useState('')
-  const [soloOfertas, setSoloOfertas] = useState(false)
+  const [soloOfertas, setSoloOfertas] = useState(!!initialFilters?.ofertas)
   const [soloAbiertos, setSoloAbiertos] = useState(false)
   const [now, setNow] = useState(() => new Date())
   const [selected, setSelected] = useState<PymeResumen | null>(null)
@@ -88,9 +92,9 @@ export function DirectoryView({ initialPyme, onOpened }: { initialPyme?: string 
     <div className="directory-toolbar"><label className="search-field"><Search size={17} aria-hidden="true" /><span className="sr-only">Buscar negocio</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Busca por nombre, servicio, sucursal o cupón" /></label><select aria-label="Comuna" value={comuna} onChange={e => setComuna(e.target.value)}><option value="">Todas las comunas</option>{comunas.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</select></div>
     <div className="category-tabs">{rubros.map(([value, label]) => <button key={label} className={rubro === value ? 'category-tab active' : 'category-tab'} onClick={() => setRubro(value)}>{label}</button>)}<button className={soloOfertas ? 'category-tab active' : 'category-tab'} aria-pressed={soloOfertas} onClick={() => setSoloOfertas(!soloOfertas)}><Tag size={14} /> Con ofertas o cupones</button><button className={soloAbiertos ? 'category-tab active' : 'category-tab'} aria-pressed={soloAbiertos} onClick={() => setSoloAbiertos(!soloAbiertos)}><Clock3 size={14} /> Abierto ahora</button></div>
     {error && !places && <ErrorState message={error} onRetry={load} />}
-    <div className="directory-layout"><div className="business-results"><div className="results-count"><strong>{places ? `${shown.length} ${shown.length === 1 ? 'lugar' : 'lugares'}` : 'Cargando...'}</strong><span title={SELLO.detalle}>Negocios validados por PetSuite</span></div>
+    <div className="directory-layout"><div className="business-results"><div className="results-count"><strong>{places ? `${shown.length} ${shown.length === 1 ? 'lugar' : 'lugares'}` : 'Cargando...'}</strong><span title={SELLO.detalle}>{places?.some(p => p.sin_reclamar) ? `Validados por PetSuite y con ${FICHA_PUBLICA.etiqueta.toLowerCase()}` : 'Negocios validados por PetSuite'}</span></div>
       {!places && !error && <LoadingState label="Cargando negocios" rows={2} />}
-      {shown.map(p => { const status = statusForBusiness(p, now); return <button key={p.id} className="business-card store-card" onClick={() => setSelected(p)}><Photo src={p.foto_portada || rubroFoto[p.rubro] || rubroFoto.otro} nombre={p.nombre_comercial} className="business-logo business-thumb" /><div className="business-info"><div className="business-card-top"><strong>{p.nombre_comercial}</strong>{p.destacado === 2 && <span className="chip chip-featured"><Crown size={12} /> Destacado</span>}{!!p.ofertas && <span className="chip chip-warn"><Tag size={12} /> {p.ofertas === 1 ? '1 oferta' : `${p.ofertas} ofertas`}</span>}{!!p.cupones?.length && <span className="chip chip-info">Cupón ONG</span>}</div><span>{rubroLabel[p.rubro] || p.rubro} · {p.comuna}{p.sucursales?.length ? ` · +${p.sucursales.length} ${p.sucursales.length === 1 ? 'sucursal' : 'sucursales'}` : ''}</span><small>{p.descripcion}</small><div className="business-meta">{p.direccion}</div><span className={`business-open-status${status.open ? ' is-open' : status.known ? ' is-closed' : ''}`}><Clock3 size={14} /> {status.text}</span></div><ChevronRight className="chevron" size={18} /></button> })}
+      {shown.map(p => { const status = statusForBusiness(p, now); return <button key={p.id} className={`business-card store-card${p.sin_reclamar ? ' is-unclaimed' : ''}`} onClick={() => setSelected(p)}><Photo src={fotoNegocio(p)} nombre={p.nombre_comercial} className="business-logo business-thumb" /><div className="business-info"><div className="business-card-top"><strong>{p.nombre_comercial}</strong>{p.sin_reclamar && <span className="chip explore-unclaimed" title={FICHA_PUBLICA.detalle}>{FICHA_PUBLICA.etiqueta}</span>}{p.destacado === 2 && <span className="chip chip-featured"><Crown size={12} /> Destacado</span>}{!!p.ofertas && <span className="chip chip-warn"><Tag size={12} /> {p.ofertas === 1 ? '1 oferta' : `${p.ofertas} ofertas`}</span>}{!!p.cupones?.length && <span className="chip chip-info">Cupón ONG</span>}</div><span>{rubroLabel[p.rubro] || p.rubro} · {p.comuna}{p.sucursales?.length ? ` · +${p.sucursales.length} ${p.sucursales.length === 1 ? 'sucursal' : 'sucursales'}` : ''}</span><small>{p.descripcion}</small><div className="business-meta">{p.direccion}</div><span className={`business-open-status${status.open ? ' is-open' : status.known ? ' is-closed' : ''}`}><Clock3 size={14} /> {status.text}</span></div><ChevronRight className="chevron" size={18} /></button> })}
       {places && shown.length === 0 && <EmptyState title={places.length ? 'Sin resultados' : 'Aún no hay negocios'} description={places.length ? 'Prueba otra búsqueda o quita los filtros.' : 'Vuelve más tarde para explorar negocios verificados.'} action={places.length ? 'Quitar filtros' : 'Actualizar'} onAction={() => { if (places.length) { setQuery(''); setComuna(''); setRubro(''); setSoloOfertas(false); setSoloAbiertos(false) } else load() }} />}</div>
       <div className="map-card"><div className="map-header"><strong>Mapa</strong><span>{shown.length} en el mapa</span></div><PlacesMap places={shown} onSelect={setSelected} /></div></div>
      {(selected || abrir) && <PymeModal id={selected?.id ?? abrir!} now={now} onClose={() => { setSelected(null); setAbrir(null) }} onContactSent={() => { if (showContacts) void loadContacts() }} />}
@@ -142,16 +146,18 @@ function PymeModal({ id, now, onClose, onContactSent }: { id: string; now: Date;
   const wa = pyme.whatsapp?.replace(/\D/g, '')
   const openStatus = statusForBusiness(pyme, now)
   const mainDirections = directionsUrl(pyme.latitud, pyme.longitud)
-   return <div className="modal-backdrop directory-profile-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose() }}><article className="modal store-modal directory-profile-modal" role="dialog" aria-modal="true" aria-labelledby="directory-business-title"><div className="directory-profile-scroll"><Photo src={pyme.foto_portada || rubroFoto[pyme.rubro] || rubroFoto.otro} nombre={pyme.nombre_comercial} className="business-hero modal-photo" /><p className="eyebrow">{(rubroLabel[pyme.rubro] || pyme.rubro).toUpperCase()} · {pyme.comuna?.toUpperCase()}</p><h2 id="directory-business-title">{pyme.nombre_comercial}</h2><p className="muted">{pyme.descripcion}</p>
+   return <div className="modal-backdrop directory-profile-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose() }}><article className="modal store-modal directory-profile-modal" role="dialog" aria-modal="true" aria-labelledby="directory-business-title"><div className="directory-profile-scroll"><Photo src={fotoNegocio(pyme)} nombre={pyme.nombre_comercial} className="business-hero modal-photo" /><p className="eyebrow">{(rubroLabel[pyme.rubro] || pyme.rubro).toUpperCase()} · {pyme.comuna?.toUpperCase()}</p><h2 id="directory-business-title">{pyme.nombre_comercial}</h2><p className="muted">{pyme.descripcion}</p>
      <div className="store-info">{pyme.direccion && <span><MapPin size={16} /> {pyme.direccion}</span>}{Object.entries(pyme.horario || {}).filter(([, hours]) => hours?.trim()).map(([dia, h]) => <span key={dia}><Clock3 size={16} /> {diaLabel[dia] || dia}: {h}</span>)}<span className={`store-open-status${openStatus.open ? ' is-open' : openStatus.known ? ' is-closed' : ''}`}><Clock3 size={16} /> {openStatus.text}</span>{mainDirections && <a className="secondary store-directions" href={mainDirections} target="_blank" rel="noopener noreferrer"><Navigation size={16} /> Cómo llegar</a>}</div>
     {!!pyme.servicios?.length && <div className="chip-row service-chips" aria-label="Servicios destacados">{pyme.servicios.map(s => <span className="chip chip-info" key={s}>{s}</span>)}</div>}
     {!!pyme.cupones?.length && <><div className="section-heading"><h3>Cupones con ONG aliadas</h3></div><p className="muted">Presenta el código al pagar: tu compra apoya a la organización.</p><CouponList cupones={pyme.cupones} por="ong" /></>}
      {!!pyme.sucursales?.length && <><div className="section-heading"><h3>Sucursales</h3></div><BranchList sucursales={pyme.sucursales} now={now} /></>}
-    <div className="section-heading"><h3>Catálogo</h3></div>
-    <p className="muted">Precios referenciales. La compra y el pago se coordinan directamente con el negocio.</p>
-    <BusinessCatalog items={pyme.catalogo} onView={itemId => track('vista_item', itemId)} />
+    {pyme.sin_reclamar
+      ? <p className="local-unclaimed-note"><Info size={16} aria-hidden="true" /> {FICHA_PUBLICA.detalle}</p>
+      : <><div className="section-heading"><h3>Catálogo</h3></div>
+        <p className="muted">Precios referenciales. La compra y el pago se coordinan directamente con el negocio.</p>
+        <BusinessCatalog items={pyme.catalogo} onView={itemId => track('vista_item', itemId)} /></>}
     <div className="qr-actions">{pyme.telefono && <a className="secondary" href={`tel:${pyme.telefono}`} onClick={() => track('clic_contacto')}><Phone size={16} /> Llamar</a>}{wa && <a className="primary" href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" onClick={() => track('clic_whatsapp')}><MessageCircle size={16} /> WhatsApp</a>}</div>
     {!pyme.telefono && !wa && <p className="muted">Este negocio no publicó un medio de contacto.</p>}
-    <BusinessContactForm id={id} nombre={pyme.nombre_comercial} onSent={onContactSent} />
+    {pyme.sin_reclamar ? <p className="muted">{FICHA_PUBLICA.sinConsultas}</p> : <BusinessContactForm id={id} nombre={pyme.nombre_comercial} onSent={onContactSent} />}
      <button className="secondary full" onClick={onClose}>Seguir explorando</button></div></article></div>
 }

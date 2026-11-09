@@ -69,13 +69,16 @@ export function puntaje(p: PymeResumen, consulta: string): number {
 
 export type Filtros = { q: string; comuna: string; rubro: string; ofertas: boolean }
 
-/** Resultados en orden normal: coincidencia y luego nombre. El plan no cambia este orden. */
+/**
+ * Resultados en orden normal: coincidencia, luego los validados antes que las fichas con información pública,
+ * y luego nombre. El plan no cambia este orden.
+ */
 export function buscar(pymes: PymeResumen[], f: Filtros): PymeResumen[] {
   return pymes
     .filter(p => (!f.rubro || p.rubro === f.rubro) && (!f.comuna || p.comuna === f.comuna || !!p.sucursales?.some(s => s.comuna === f.comuna)) && (!f.ofertas || !!p.ofertas || !!p.cupones?.length))
     .map(p => ({ p, n: puntaje(p, f.q) }))
     .filter(r => r.n > 0)
-    .sort((a, b) => b.n - a.n || a.p.nombre_comercial.localeCompare(b.p.nombre_comercial, 'es'))
+    .sort((a, b) => b.n - a.n || Number(!!a.p.sin_reclamar) - Number(!!b.p.sin_reclamar) || a.p.nombre_comercial.localeCompare(b.p.nombre_comercial, 'es'))
     .map(r => r.p)
 }
 

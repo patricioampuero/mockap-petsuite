@@ -16,6 +16,8 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 
 const values = new Map()
 globalThis.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }
+// La demo (mock) simula Orcob; el API solo con esta variable. La versión real sin Orcob se prueba en pagos.test.mjs.
+process.env.ORCOB_SIMULADO = '1'
 
 const mock = await import('../../src/mock/server.ts')
 const mockDb = await import('../../src/mock/db.ts')
@@ -77,8 +79,18 @@ function cliente(handle) {
 }
 
 // Corre el guion contra ambos backends con los mismos datos y compara paso a paso.
+// Ficha con información pública: la demo no trae ninguna (solo existen en la versión real), así que la prueba
+// agrega una a los datos de partida de ambos backends.
+const FICHA_PUBLICA = {
+  propietario_id: '', nombre_comercial: 'Forrajería Campo Verde', rut_empresa: '', rubro: 'tienda', descripcion: null, comuna_id: 1,
+  direccion: 'Avenida Ejemplo 812, Osorno', latitud: '-40.5812', longitud: '-73.1188', telefono: '+56642000000', whatsapp: null, horario: {}, servicios: [],
+  estado_verificacion: 'pendiente', origen: 'publica', fuente: 'https://ejemplo.test/forrajeria',
+}
+
 async function paridad(guion) {
   mockDb.resetDemo()
+  mockDb.db.pymes.push({ ...FICHA_PUBLICA, id: crypto.randomUUID(), creado_en: mockDb.now() })
+  mockDb.save()
   const semilla = structuredClone(mockDb.db)
   const { database, client } = await pgliteDatabase()
   try {
@@ -158,6 +170,16 @@ test('cuentas: login, registro, sesión y catálogos', async () => {
     await call.login('nueva', 'nueva@petsuite.cl', 'secreta123')
     await call.login('nueva', 'nueva@petsuite.cl', 'nuevaClave123')
     await call('GET', '/auth/yo', undefined, 'nueva')
+
+    // Límites de solicitudes: tras 5 contraseñas incorrectas, esa cuenta queda bloqueada 15 minutos desde ese
+    // cliente, aunque la sexta sea correcta; las demás cuentas siguen entrando.
+    for (let i = 0; i < 5; i++) await call.login('nadie', 'jefe@petsuite.cl', `incorrecta-${i}`)
+    await call.login('jefe', 'jefe@petsuite.cl')
+    await call.login('tutor', 'tutor@petsuite.cl')
+    // Registro, reenvío y recuperación envían correos: 10 por cliente cada hora (en este guion ya van 7).
+    for (let i = 0; i < 3; i++) await call('POST', '/auth/recuperar', { correo: `persona${i}@petsuite.cl` })
+    await call('POST', '/auth/recuperar', { correo: 'persona9@petsuite.cl' })
+    await call('POST', '/auth/registro', { ...nuevo, correo: 'otra@petsuite.cl' })
   })
   assert.ok(pasos > 40)
 })
@@ -243,6 +265,12 @@ test('Ficha Única: mascotas, accesos clínicos, registros con autoría, medalla
     await call('POST', `/qr/${token}/mensajes`, { mensaje: 'Hola' })
     await call('POST', `/qr/${token}/mensajes`, { mensaje: 'Encontré a Luna cerca de la plaza.', nombre: 'Vecina', contacto: '+56911112222', latitud: -40.5741, longitud: -73.1349 })
     await call('POST', `/qr/${token}/mensajes`, { mensaje: 'La vi de nuevo en la costanera.' })
+    // Cada mensaje avisa al tutor por correo (sin proveedor de correo, la bandeja guarda el aviso completo).
+    await call.login('admin', 'admin@petsuite.cl')
+    await call('GET', '/admin/correos', undefined, 'admin', { comparar: lista => lista.filter(c => c.tipo === 'aviso_qr') })
+    // Hasta 5 mensajes por medalla y cliente cada hora: el sexto responde 429.
+    for (let i = 0; i < 3; i++) await call('POST', `/qr/${token}/mensajes`, { mensaje: `Aviso número ${i + 3} desde la plaza.` })
+    await call('POST', `/qr/${token}/mensajes`, { mensaje: 'Un aviso más, ya sobre el límite.' })
     const { data: avisos } = await call('GET', `/mascotas/${luna}/mensajes`, undefined, 'tutor')
     await call('GET', `/mascotas/${luna}/mensajes`, undefined, 'tutor2')
     await call('PATCH', `/mascotas/mensajes/${avisos[0].id}`, { estado: 'leido' }, 'tutor2')
@@ -280,6 +308,15 @@ test('directorio y Pymes: perfil, consultas, catálogo, métricas, suscripción,
     await call('GET', '/pymes?comuna=Osorno&rubro=veterinaria')
     await call('GET', '/pymes?rubro=inexistente')
     for (const quien of ['tienda', 'veterinaria', 'peluqueria', 'jefe', 'clinico', 'tutor']) await call('GET', '/pymes/mias', undefined, quien)
+
+    // Ficha con información pública: aparece en Explorar sin sello, cuenta visitas y clics, pero no recibe
+    // consultas ni se puede validar sin su dueño, y no aparece entre las Pymes por revisar.
+    const publica = idDe(semilla.pymes, 'nombre_comercial', 'Forrajería Campo Verde')
+    await call('GET', '/pymes?rubro=tienda')
+    await call('GET', `/pymes/${publica}`)
+    await call('POST', `/pymes/${publica}/eventos`, { tipo: 'clic_contacto' })
+    await call('POST', `/pymes/${publica}/contactos`, { mensaje: '¿Tienen alimento para conejos?' }, 'tutor')
+    await call('PATCH', `/admin/pymes/${publica}/verificacion`, { decision: 'aprobar' }, 'asesor')
 
     // Vitrina pública y eventos para métricas.
     await call('GET', `/pymes/${shop}`)

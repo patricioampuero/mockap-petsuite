@@ -99,10 +99,21 @@ El frontend y el API se publican juntos en un mismo proyecto de Vercel, así que
 
 Con proveedor configurado, la bandeja de correos que ven el asesor y el administrador guarda cada mensaje sin el enlace de acceso. Si Resend falla al enviar un enlace, la solicitud responde 502 y no queda una cuenta a medias.
 
-Antes de abrir la versión real al público falta:
+Con un dominio propio, fija `APP_URL` con ese dominio y redirige `<proyecto>.vercel.app` hacia él en **Settings → Domains**. El API acepta solicitudes desde `APP_URL`, el dominio de producción del proyecto y la vista previa en curso. Si hace falta otro origen, agrégalo en `PETSUITE_CORS_ORIGINS`.
 
-- verificar el certificado TLS de Supabase en lugar de `sslmode=no-verify`;
-- evitar la pausa del plan gratuito de Supabase tras 7 días sin uso, porque dejaría sin respuesta el QR de emergencia;
-- limitar los intentos de inicio de sesión.
+### Avisos, límites y monitoreo
+
+- **Aviso al tutor.** Cada mensaje enviado desde la ficha pública de un QR le llega al tutor por correo, con el mensaje, el contacto y la ubicación que dejó quien escribió. La copia de la bandeja omite esos datos. Si el correo falla, el mensaje igual queda guardado y el tutor lo ve en la ficha.
+- **Límites de solicitudes** (`src/shared/limites.ts`, iguales en el mock):
+  - 5 contraseñas incorrectas por cuenta y cliente cada 15 minutos, y 30 por cliente;
+  - 10 correos de registro, reenvío o recuperación por cliente cada hora;
+  - 5 mensajes por medalla y cliente cada hora, y 30 por medalla al día.
+
+  Al superarlos, el API responde 429. El cliente es la huella SHA-256 de la IP, y la tabla `limites_solicitudes` guarda solo huellas.
+- **Monitoreo.** `/healthz` hace una consulta a la base y responde 503 si no contesta. El workflow `Salud` lo consulta dos veces al día, avisa en Discord si falla y, con eso, evita que Supabase pause la base del plan gratuito. Define la variable del repositorio `SALUD_URL` (por ejemplo `https://petsuite.space`). Sin ella, usa `https://mockap-petsuite.vercel.app`. GitHub desactiva los workflows programados tras 60 días sin actividad en el repositorio.
+
+**Aplica cada migración en la base real antes de fusionar en `main`**, porque la fusión publica de inmediato. Si la migración 006 todavía no está aplicada, el API sigue guardando los mensajes y permitiendo el ingreso, pero sin límites ni avisos por correo, y lo anota en el registro de Vercel.
+
+Antes de abrir la versión real al público falta verificar el certificado TLS de Supabase en lugar de `sslmode=no-verify`.
 
 Verificación local: `npm test`.

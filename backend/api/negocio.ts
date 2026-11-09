@@ -11,8 +11,12 @@ export type Pyme = {
   id: string; propietario_id: string; nombre_comercial: string; rut_empresa: string; rubro: 'veterinaria' | 'tienda' | 'peluqueria' | 'otro'; descripcion: string | null
   comuna_id: number; direccion: string | null; latitud: string | null; longitud: string | null; telefono: string | null; whatsapp: string | null
   horario: Record<string, string>; servicios: string[]; foto_portada: string | null; estado_verificacion: 'pendiente' | 'aprobada' | 'rechazada' | 'suspendida'; creado_en: string
+  // 'publica': ficha con datos públicos, sin dueño ni RUT (propietario_id y rut_empresa son null en la base).
+  origen: 'registro' | 'publica'
 }
-export const PYME = 'p.id, p.propietario_id, p.nombre_comercial, p.rut_empresa, p.rubro, p.descripcion, p.comuna_id, p.direccion, p.latitud, p.longitud, p.telefono, p.whatsapp, p.horario, p.servicios, p.foto_portada, p.estado_verificacion, p.creado_en'
+export const PYME = 'p.id, p.propietario_id, p.nombre_comercial, p.rut_empresa, p.rubro, p.descripcion, p.comuna_id, p.direccion, p.latitud, p.longitud, p.telefono, p.whatsapp, p.horario, p.servicios, p.foto_portada, p.estado_verificacion, p.creado_en, p.origen'
+/** En Explorar: negocios validados y fichas con información pública (sin dueño, en gris y sin sello). */
+export const EN_VITRINA = "(p.estado_verificacion = 'aprobada' or p.origen = 'publica')"
 export type Suscripcion = { id: string; pyme_id: string; plan_id: number; inicio: string; fin: string; estado: 'pendiente' | 'activa' | 'vencida' | 'cancelada' }
 export type Sucursal = {
   id: string; pyme_id: string; nombre: string; comuna_id: number; direccion: string | null; latitud: string | null; longitud: string | null; telefono: string | null; whatsapp: string | null
@@ -152,7 +156,7 @@ export function pymeResumenDe(p: Pyme, v: Vitrina) {
     direccion: p.direccion, latitud: p.latitud, longitud: p.longitud, telefono: p.telefono, whatsapp: p.whatsapp, horario: p.horario,
     foto_portada: plan.beneficios.portada ? p.foto_portada ?? null : null,
     servicios: p.servicios ?? [], ofertas: itemsPublicosDe(v.items.get(p.id) ?? [], plan).filter(i => ofertaVigente(i.oferta)).length, destacado: plan.beneficios.destacado,
-    sucursales: sucursalesPublicasDe(p, v.sucursales.get(p.id) ?? [], plan, v.comunas), cupones: v.cupones.filter(c => c.pyme_id === p.id),
+    sucursales: sucursalesPublicasDe(p, v.sucursales.get(p.id) ?? [], plan, v.comunas), cupones: v.cupones.filter(c => c.pyme_id === p.id), sin_reclamar: p.origen === 'publica',
   }
 }
 

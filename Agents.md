@@ -43,7 +43,7 @@ Estas reglas resumen errores que ya ocurrieron. Léelas antes de cada tarea.
 
 ### Estructura del código
 
-- `src/shared/`: núcleo común (`api`, `validators`, `permissions`, `media`, `feedback`, `accessibility`, `share`, `errors`, `legal`, `cuentas`, `profile-cover`, `metric`).
+- `src/shared/`: núcleo común (`api`, `validators`, `permissions`, `media`, `feedback`, `accessibility`, `share`, `errors`, `legal`, `cuentas`, `limites`, `avisos`, `fichas`, `pagos`, `profile-cover`, `metric`).
 - `src/styles/`: hojas de estilo.
 - `src/modules/<área>/`: una carpeta por área (landing, tutor, community, directory, business, clinical, ong, plans, promotions, advisor, admin, privacy, auth).
 - `src/mock/`: API simulada en el navegador.
@@ -56,7 +56,8 @@ Estas reglas resumen errores que ya ocurrieron. Léelas antes de cada tarea.
 - Toda ruta o regla nueva o modificada se implementa a la vez en `src/mock/` y en `backend/api/`, con un paso en el guion de `backend/api/paridad.test.mjs`. La prueba de cobertura falla si una ruta queda sin guion.
 - Una tarea «solo frontend» no toca `src/mock/` ni `backend/`. Si necesita un dato nuevo, se anota como dependencia.
 - Las respuestas públicas (QR, adopciones, ONG) son lista blanca: nunca datos del tutor, medicamentos, historial ni ids internos. Un id interno solo se devuelve al dueño del recurso.
-- La estructura de la base cambia solo con migraciones nuevas en `backend/db/migrations/`, nunca desde el panel de Supabase.
+- La estructura de la base cambia solo con migraciones nuevas en `backend/db/migrations/`, nunca desde el panel de Supabase. Aplica la migración en la base real antes de fusionar en `main`, porque la fusión publica la versión nueva al instante.
+- Una ruta pública que acepta contraseñas, envía correos o deja mensajes a otra persona debe tener su límite en `src/shared/limites.ts`, que comparten el mock y el API.
 - La base es compartida: `npm run db:seed -- --reset` borra los datos de todo el equipo. No lo uses sin avisar.
 - `.env` nunca se sube al repositorio ni se pega en el chat.
 
@@ -84,6 +85,7 @@ PetSuite dejó de ser solo una demostración. La demo, con el mock y la clave `p
 - Reenviar la confirmación y recuperar la contraseña responden lo mismo exista o no la cuenta.
 - Los textos, plazos y mensajes de las cuentas están en `src/shared/cuentas.ts`, compartido por el mock, el API y el frontend.
 - Los botones de cuentas de prueba y «Datos de demostración» solo aparecen en la demo (`modoDemo`, sin `VITE_API_URL`).
+- Orcob está simulado: solo funciona en la demo y en el API con `ORCOB_SIMULADO=1` (pruebas). En la versión real los planes se pagan por transferencia, que confirma un asesor; los datos de la cuenta van en `DATOS_TRANSFERENCIA` (`src/shared/pagos.ts`).
 
 ### Verificación antes de terminar
 
@@ -879,3 +881,158 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - En Chromium sobre la build de Pages, a 1366 y 390 px en claro y oscuro: 30 comunas en la landing, Explorar y registro, filtro por «Río Negro» correcto, clave v4 borrada, sin errores de JavaScript ni desplazamiento horizontal.
   - `git diff --check` correcto.
 - Pendiente: aplicar la migración en la base real después de fusionar esta rama, con `node --env-file=.env.production.local backend/db/migrate.mjs`.
+
+## 2026-11-02
+
+### Inicio del tutor con atajos, recorrido y vida de la comuna (solo frontend)
+
+- Fecha: 2026-11-02.
+- Rama: `patricioampuero/inicio-tutor-recorridos`.
+- Archivos agregados: `src/modules/tutor/tutor-home.tsx`.
+- Archivos modificados: `src/modules/tutor/tutor.tsx`, `src/modules/directory/directory.tsx`, `src/modules/ong/adoption.tsx`, `src/modules/community/community.tsx`, `src/styles/design-pro.css` y `AGENTS.md`.
+- Cambio realizado:
+  - «¿Qué necesitas hoy?»: ocho atajos de color bajo la portada. Son veterinarias, peluquería, alimento, ofertas, adoptar, reportar extravío, medalla QR y muro.
+    - Cada atajo muestra una cifra real de la comuna del tutor, por ejemplo «1 en Osorno» o «5 buscan hogar».
+    - Cada uno abre su vista con lo elegido: el directorio filtrado por rubro y comuna, o el muro con el editor de extravío abierto. La medalla abre el QR de la mascota.
+    - Si la comuna no tiene negocios de ese rubro, el directorio se abre sin filtrar por comuna.
+  - «Tu recorrido»: anillo de avance y cinco pasos (mascota, datos de salud, medalla QR, vacunas y participación en el muro).
+    - Cada paso se marca con lo que el tutor ya registró, no con clics, y lleva su acción.
+    - Se oculta al completar los cinco pasos y reemplaza al panel «Primeros pasos» de FE-03.
+  - «Esta semana en tu comuna»: extravíos y alertas activos, y próximos eventos con su fecha, en lugar de la última publicación del muro.
+  - Carriles con desplazamiento horizontal:
+    - «Servicios en tu comuna», con foto, rubro, estado de apertura, ofertas y cuántos están abiertos ahora. Usan el orden normal de Explorar, que no depende del plan.
+    - «Buscan un hogar», con los animales de su comuna primero. Cada uno abre su ficha de adopción.
+  - El aviso de medalla QR solo aparece si hay mascotas sin medalla. El botón «Ir al muro» de la portada pasa a «Explorar servicios».
+  - `DirectoryView`, `AdoptionCatalog` y `CommunityView` aceptan un filtro, un animal o un tipo de publicación inicial. Al salir de esa vista se olvida, y el menú la abre sin filtros.
+  - Estilos en `design-pro.css`: un bloque propio con tonos por atajo y el token nuevo `--tone-danger`, con su variante para modo oscuro. Respetan el movimiento reducido.
+- Motivo: el usuario pidió más opciones de recorrido en la vista del tutor y que llamara la atención del público.
+- Dependencias: ninguna. Solo se leen rutas existentes (`/pymes`, `/adopciones`, `/muro`, `/comunas`); no se tocaron `src/mock/` ni `backend/`.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores, `npm run build -- --base=/mockap-petsuite/` correcto, `npm test` 41 de 41 y `git diff --check` correcto.
+  - Recorrido con Chromium sobre la build de Pages:
+    - Tutor demo y una cuenta nueva sin mascotas (recorrido en 0 de 5), a 1366 y 390 px, en claro y oscuro.
+    - Sin errores de JavaScript ni desplazamiento horizontal.
+    - Atajos probados: «Veterinarias» abre el directorio con Veterinarias y Osorno; «Reportar extravío» abre el editor con ese tipo; un animal del carril abre su ficha de adopción.
+
+## 2026-11-09
+
+### Aviso al tutor desde el QR, límites de solicitudes y monitoreo de la versión real
+
+- Fecha: 2026-11-09.
+- Rama: `patricioampuero/aviso-tutor-y-limites`, creada sobre `patricioampuero/inicio-tutor-recorridos` para no chocar en esta bitácora mientras esa rama no esté en `main`. Se fusiona después de ella.
+- Archivos agregados: `src/shared/limites.ts`, `src/shared/avisos.ts`, `backend/api/limites.ts`, `backend/api/limites.test.mjs`, `backend/db/migrations/006_avisos_y_limites.sql` y `.github/workflows/salud.yml`.
+- Archivos modificados:
+  - API: `backend/api/index.ts`, `backend/api/ficha.ts`, `backend/api/auth.ts`, `backend/http.mjs` y `backend/vercel/rutas.mjs`.
+  - Mock: `src/mock/server.ts`, `src/mock/db.ts` y `src/mock/suite.ts`.
+  - Pruebas: `backend/api/paridad.test.mjs`, `backend/vercel/vercel.test.mjs` y `package.json`.
+  - Otros: `.github/workflows/discord-notifications.yml`, `.github/scripts/notify-discord.mjs`, `backend/README.md` y `Agents.md`, con dos reglas nuevas en «API: mock y base de datos».
+- Cambio realizado:
+  - **Aviso al tutor.** Cada mensaje enviado desde la ficha pública de una medalla le llega al tutor por correo, con el mensaje, el nombre y el contacto que dejó quien escribió, y un enlace a OpenStreetMap si compartió su ubicación.
+    - La copia de la bandeja omite esos datos, porque son de un tercero: el cuerpo dice «[mensaje enviado solo al tutor]».
+    - Si el correo falla, el mensaje igual queda guardado y el tutor lo ve en la ficha de la mascota. El aviso corre en un punto de guardado de la transacción, así que un error al registrarlo no deshace el mensaje.
+    - En la demo, el aviso llega a la bandeja simulada. `enviarCorreo` acepta ahora `obligatorio` y el texto que reemplaza la parte privada.
+  - **Límites de solicitudes** (`src/shared/limites.ts`), iguales en el mock y el API. Al superarlos, la ruta responde 429 «Demasiados intentos. Espera… y vuelve a intentarlo.», que el ingreso y la ficha pública ya muestran tal cual:
+    - 5 contraseñas incorrectas por cuenta y cliente cada 15 minutos, y 30 por cliente. Un ingreso correcto olvida los intentos de esa cuenta. Como cuenta el cliente, nadie puede bloquear a otra persona desde otro lugar.
+    - 10 correos de registro, reenvío o recuperación por cliente cada hora.
+    - 5 mensajes por medalla y cliente cada hora, y 30 por medalla al día.
+    - El cliente es la huella SHA-256 de la IP (`clienteDe` en `backend/http.mjs`, con `x-real-ip` o `x-forwarded-for` en Vercel). En el mock siempre es `local`.
+    - La tabla `limites_solicitudes` guarda solo la huella de cada clave y la hora: nunca el correo, el token ni la IP. Los eventos se registran en transacciones propias, para que un intento fallido no se pierda cuando la ruta se deshace, y se borran a los 2 días.
+  - **Migración 006**: la tabla `limites_solicitudes`, con RLS, y el tipo de correo `aviso_qr`. Si la versión se publica antes de aplicarla, el API sigue permitiendo el ingreso y guardando los mensajes, sin límites ni avisos, y lo anota en el registro.
+  - **Monitoreo.** `/healthz` consulta la base y responde 503 si no contesta. El workflow `Salud` lo revisa dos veces al día, con tres intentos, y si falla avisa en Discord. Eso además evita que Supabase pause la base del plan gratuito. Usa la variable del repositorio `SALUD_URL` y, si falta, `https://mockap-petsuite.vercel.app`.
+  - **Orígenes del API.** Se suma el dominio de producción de Vercel, así funcionan `petsuite.space` y `www.petsuite.space` aunque `APP_URL` fije solo uno.
+  - **Mock.** La clave pasa a `petsuite-mock-db-v6` porque el modelo suma `limites`, y se borra la v5.
+- Motivo: el usuario pidió terminar lo que falta antes del piloto. El QR guardaba los mensajes sin avisar a nadie, no había límite de intentos y la base gratuita se pausaba tras 7 días sin uso. El usuario compró `petsuite.space` en Vercel para que Resend pueda enviar a cualquier persona.
+- Pendiente:
+  - Aplicar la migración 006 en la base de la demo y en la real antes de fusionar.
+  - Definir `SALUD_URL`, `APP_URL` y `MAIL_FROM` con el dominio nuevo, y verificar el dominio en Resend.
+  - Mostrar en el Inicio del tutor cuántos avisos nuevos tiene: toca archivos de la rama del tutor.
+  - Verificar el certificado TLS de Supabase.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores, `npm run build -- --base=/mockap-petsuite/` correcto y `git diff --check` correcto.
+  - `npm test`: 45 de 45, con 4 pruebas nuevas en `limites.test.mjs`:
+    - intentos por cuenta y por cliente, y solo huellas en la tabla;
+    - aviso por Resend simulado, sin el mensaje ni el contacto en la bandeja, y mensaje guardado aunque el envío falle;
+    - base sin la migración 006, en la que el ingreso y los mensajes siguen funcionando;
+    - `/healthz` con y sin base, y la huella de la IP.
+  - La paridad suma pasos con 429 en el ingreso, los correos y los mensajes del QR, además del aviso en la bandeja. Ambos backends responden lo mismo.
+  - La prueba de Vercel comprueba que la función empaquetada, sin base, responde 503 en `/healthz`.
+  - Sin cambios de interfaz: no se revisó en el navegador.
+
+### Fichas con información pública en Explorar
+
+- Fecha: 2026-11-09.
+- Rama: `patricioampuero/fichas-sin-reclamar`, creada sobre `patricioampuero/aviso-tutor-y-limites`, que aún no está en `main`. Se fusiona después de ella.
+- Archivos agregados: `backend/db/migrations/007_fichas_publicas.sql`, `backend/db/cargar-fichas.mjs`, `backend/db/fichas.test.mjs` y `src/shared/fichas.ts`.
+- Archivos modificados:
+  - API: `backend/api/negocio.ts`, `backend/api/pymes.ts`, `backend/api/admin.ts` y `backend/db/seed.mjs`.
+  - Mock: `src/mock/server.ts` y `src/mock/db.ts`.
+  - Interfaz: `src/modules/directory/explore.tsx`, `src/modules/directory/public-business.tsx`, `src/modules/directory/directory.tsx`, `src/modules/directory/explore-search.ts`, `src/modules/tutor/tutor-home.tsx`, `src/modules/landing/landing.tsx`, `src/shared/media.tsx`, `src/shared/api.ts` y `src/styles/design-pro.css`.
+  - Otros: `backend/api/paridad.test.mjs`, `package.json` y `Agents.md`.
+- Cambio realizado:
+  - Una **ficha con información pública** es un negocio real que aún no se inscribe. Muestra solo su nombre, dirección, teléfono, rubro y ubicación, sacados de fuentes públicas. Es lo que se decidió el 29 de octubre: los locales sin validar se ven en gris.
+  - **Migración 007**: columnas `origen` (`registro` o `publica`) y `fuente`. El dueño y el RUT pasan a ser opcionales solo para las fichas públicas. Tres restricciones las cuidan: una ficha pública no tiene dueño, siempre tiene fuente y nunca queda validada.
+  - **Explorar, el perfil y el directorio**:
+    - Las fichas públicas aparecen en gris, con la etiqueta punteada «Información pública» en vez del sello «Validado por PetSuite», y con un pin punteado en el mapa.
+    - No llevan foto de muestra, porque se podría creer que es ese local: muestran sus iniciales.
+    - No muestran catálogo.
+    - En vez del formulario de consulta, el perfil explica que el negocio aún no recibe consultas por PetSuite y ofrece «Crear cuenta de Pyme» para reclamar la ficha.
+    - A igual coincidencia, los negocios validados van primero. El plan sigue sin cambiar el orden.
+  - **API y mock**:
+    - `GET /pymes` y `GET /pymes/:id` incluyen las fichas públicas con `sin_reclamar: true`, sin RUT ni dueño. Cuentan visitas y clics.
+    - Una consulta enviada a una ficha pública responde 422.
+    - El asesor no las ve entre las Pymes por revisar, y si intenta validar una, el API responde 422.
+  - **`npm run db:cargar-fichas -- <json> [--aplicar]`** (`backend/db/cargar-fichas.mjs`):
+    - Sin `--aplicar` es una simulación que no escribe nada.
+    - Valida cada ficha: comuna existente, teléfono en formato +56 y fuente obligatoria.
+    - Omite los negocios que ya existen con el mismo nombre en la misma comuna.
+    - `quitarFicha` borra una ficha pública, si el negocio lo pide, y nunca toca un negocio inscrito.
+  - La demo no trae fichas públicas, a pedido del usuario: solo existen en la versión real. La prueba de paridad agrega una a los datos de partida de ambos backends.
+- Motivo: el usuario pidió que la versión real no se vea vacía, con negocios reales de la región. Se cargan como fichas con información pública, porque cargarlos como si se hubieran inscrito habría engañado a los usuarios y a esos negocios.
+- Pendiente:
+  - Aplicar las migraciones 006 y 007 en la base real antes de fusionar.
+  - Cargar las fichas investigadas en la base real con el script.
+  - Herramienta del asesor para unir una ficha pública a la cuenta de la Pyme que la reclama: por ahora se hace a mano.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 47 de 47, con 2 pruebas nuevas en `backend/db/fichas.test.mjs`:
+    - carga desde JSON en simulación y con `--aplicar`, sin duplicados aunque cambien las tildes o las mayúsculas, rechazo de una comuna desconocida o un teléfono mal escrito, cómo la muestra el API y cómo se quita;
+    - las tres restricciones de la base.
+  - La paridad suma la ficha pública: aparece en la lista y en su perfil, cuenta un clic, y la consulta y la validación responden 422.
+  - Revisión en Chromium sobre la build de Pages, con una ficha pública agregada al almacenamiento del navegador: Explorar y el perfil a 1366 y 390 px, en claro y oscuro. Sin errores de JavaScript ni desplazamiento horizontal.
+
+### Alta de negocios y solicitudes de plan en la versión real
+
+- Fecha: 2026-11-09.
+- Rama: `patricioampuero/solicitudes-pyme-real`, creada sobre `patricioampuero/fichas-sin-reclamar`. Se fusiona después de ella.
+- Archivos agregados: `src/shared/pagos.ts` y `backend/api/pagos.test.mjs`.
+- Archivos modificados:
+  - API: `backend/api/pymes.ts` y `backend/api/auth.ts`.
+  - Mock: `src/mock/server.ts` y `src/mock/suite.ts`.
+  - Interfaz: `src/modules/business/business.tsx` y `src/styles/design-pro.css`.
+  - Otros: `backend/api/paridad.test.mjs`, `package.json` y `Agents.md` (estructura y regla de Orcob).
+- Cambio realizado:
+  - **Agujero cerrado.** La ruta que simula el aviso de pago de Orcob (`POST /pymes/:id/pagos/:pagoId/orcob-confirmado`) la podía llamar la propia Pyme. En la versión real, cualquier negocio podía activarse un plan pagado sin pagar. Ahora el API solo acepta Orcob con `ORCOB_SIMULADO=1`, que usan las pruebas. Sin esa variable, elegir Orcob responde 422 y esa ruta responde 403. La demo (mock) sigue simulándolo.
+  - **Pago por transferencia.**
+    - En la versión real, el alta y la suscripción ofrecen solo transferencia y muestran «Cómo pagar» con el monto.
+    - Mientras `DATOS_TRANSFERENCIA` (`src/shared/pagos.ts`) no tenga la cuenta de PetSuite, el texto dice que un asesor enviará los datos.
+    - La referencia de la transferencia pasa a ser opcional: la Pyme puede pedir el plan y pagar después, y el asesor confirma el pago.
+    - El selector de Orcob y «Simular aviso de pago» quedan solo en la demo.
+  - **Avisos.**
+    - El alta de un negocio y cada solicitud de plan avisan al equipo con el negocio, el RUT, el plan, el monto y la referencia. Antes no avisaban a nadie, ni en el mock ni en el API.
+    - La Pyme recibe por correo las instrucciones de pago.
+    - `avisarAsesores` escribe a los administradores cuando no hay asesores activos, como pasa hoy en la base real. Esto vale también para banners, convenios y perfiles de ONG.
+- Motivo: el usuario pidió revisar cómo una Pyme envía la solicitud de su perfil y la de su suscripción. En la versión real el pago dependía de un Orcob simulado que la Pyme podía confirmar sola, no había a qué cuenta transferir y nadie se enteraba de las solicitudes.
+- Pendiente:
+  - Completar `DATOS_TRANSFERENCIA` con la cuenta real.
+  - Crear asesores en la base real (`backend/db/crear-admin.mjs --asesor`). Mientras no haya, los avisos van al administrador.
+  - La derivación de deudas a Orcob del asesor sigue siendo simulada.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 48 de 48. La prueba nueva `pagos.test.mjs` corre sin Orcob simulado y comprueba:
+    - el alta con Orcob responde 422;
+    - el alta por transferencia funciona sin referencia;
+    - sin asesores, el aviso le llega al administrador;
+    - la Pyme recibe el monto y cómo pagar;
+    - una Pyme validada no puede usar Orcob, y confirmar un pago Orcob responde 403.
+  - La paridad sigue igual en ambos backends, con Orcob simulado en el API y la referencia ahora opcional.
+  - Revisión en Chromium con una build con `VITE_API_URL` contra `backend/server.mjs`: el alta de una cuenta de Pyme nueva con el plan Oro y el cambio de plan de Huellitas Osorno, a 1366 y 390 px, en claro y oscuro. Sin menciones de Orcob, con «Cómo pagar», sin errores de JavaScript ni desplazamiento horizontal.

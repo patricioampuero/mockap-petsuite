@@ -89,7 +89,9 @@ export type PublicaEmergencia = { nombre: string; especie: string; raza: string 
 
 export type PymeResumen = { id: string; nombre_comercial: string; rubro: string; descripcion: string | null; comuna: string; direccion: string | null; latitud: string | null; longitud: string | null; telefono: string | null; whatsapp: string | null; horario: Record<string, string>; foto_portada?: string | null; servicios?: string[]; ofertas?: number
   // Planes Plata y Oro: prioridad en el buscador (2 = primero con insignia). Las sucursales y cupones alimentan la búsqueda.
-  destacado?: 0 | 1 | 2; sucursales?: SucursalPublica[]; cupones?: CuponPublico[] }
+  destacado?: 0 | 1 | 2; sucursales?: SucursalPublica[]; cupones?: CuponPublico[]
+  // Ficha con información pública (src/shared/fichas.ts): sin dueño ni sello, y no recibe consultas.
+  sin_reclamar?: boolean }
 export type SucursalPublica = { id: string; nombre: string; comuna: string; direccion: string | null; latitud: string | null; longitud: string | null; telefono: string | null; whatsapp: string | null; horario: Record<string, string>; descripcion: string | null; servicios: string[] }
 export type CuponPublico = { codigo: string; titulo: string; descuento_pct: number; condiciones: string; hasta: string; ong: string; ong_id: string; negocio?: string; pyme_id?: string }
 // Oferta referencial por un rango de fechas (AAAA-MM-DD). No hay cobros dentro de la app.

@@ -10,7 +10,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../shared/feedback'
 import { useModalFocus } from '../../shared/accessibility'
 import { ShareButton } from '../../shared/share'
 
-type Tipo = 'extravio' | 'encuentro' | 'recomendacion' | 'alerta' | 'evento' | 'adopcion'
+export type Tipo = 'extravio' | 'encuentro' | 'recomendacion' | 'alerta' | 'evento' | 'adopcion'
 type Comentario = { id: string; autor: string; texto: string; es_mio: boolean; editado: boolean }
 type Post = {
   id: string; tipo: Tipo; texto: string; creado_en: string; editado: boolean; autor: string; es_mio: boolean; comuna_id: number
@@ -41,7 +41,8 @@ const ago = (iso: string) => {
 }
 
 // RF-07 / RF-08 · Muro segmentado por comuna, con reacciones, comentarios, reportes y publicaciones guardadas.
-export function CommunityView({ onAdoption, onPyme }: { onAdoption?: () => void; onPyme?: (id: string) => void }) {
+// initialType abre el editor con ese tipo, por ejemplo desde el atajo «Reportar extravío» del Inicio.
+export function CommunityView({ onAdoption, onPyme, initialType }: { onAdoption?: () => void; onPyme?: (id: string) => void; initialType?: Tipo | null }) {
   const session = getSession()
   const [posts, setPosts] = useState<Post[] | null>(null)
   const [comunas, setComunas] = useState<Comuna[]>([])
@@ -49,8 +50,8 @@ export function CommunityView({ onAdoption, onPyme }: { onAdoption?: () => void;
   const [filter, setFilter] = useState<Filtro>('Todos')
   const [query, setQuery] = useState('')
   const [orden, setOrden] = useState<'recientes' | 'apoyadas'>('recientes')
-  const [composer, setComposer] = useState<Post | 'new' | null>(null)
-  const [newType, setNewType] = useState<Tipo>('recomendacion')
+  const [composer, setComposer] = useState<Post | 'new' | null>(initialType ? 'new' : null)
+  const [newType, setNewType] = useState<Tipo>(initialType ?? 'recomendacion')
   const [reporting, setReporting] = useState<Reportable | null>(null)
   const [poster, setPoster] = useState<{ post: Post; petId?: string } | null>(null)
   const [commenting, setCommenting] = useState<string | null>(null)

@@ -9,8 +9,12 @@ import { businessContactSchema, businessProfileSchema, businessReplySchema, user
 import { DIAS_GRACIA, DIAS_PERIODO, PLANES, PLAN_GRATIS, dentroDelLimite, etiquetasLimite, limiteTexto, planPorId, type Limites, type Plan } from '../modules/plans/plans'
 import { PERMISOS_ADMIN, PERMISOS_ASESOR, PERMISOS_DUENO, type ModuloPyme } from '../shared/permissions'
 import { crearCobro } from './orcob'
-import { emitirToken, enviarCorreo, registerSuiteRoutes, segundosDesdeEnvio, usarToken } from './suite'
+import { avisarAsesores, baseApp, emitirToken, enviarCorreo, registerSuiteRoutes, segundosDesdeEnvio, usarToken } from './suite'
+import { avisoSolicitud, correoSolicitudPlan } from '../shared/pagos'
 import { CORREO_SIN_CONFIRMAR, SEGUNDOS_ENTRE_ENVIOS, correoRestablecer, correoVerificacion } from '../shared/cuentas'
+import { correoAvisoQr } from '../shared/avisos'
+import { CONSULTAS_NO_DISPONIBLES, FICHA_PUBLICA_SIN_DUENO } from '../shared/fichas'
+import { limitesDe, mensajeDemasiados, STATUS_DEMASIADOS, sumaEvento, type Limite } from '../shared/limites'
 
 z.config(z.locales.es())
 
@@ -142,9 +146,11 @@ const pymeResumen = (p: Pyme) => {
     direccion: p.direccion, latitud: p.latitud, longitud: p.longitud, telefono: p.telefono, whatsapp: p.whatsapp, horario: p.horario,
     foto_portada: plan.beneficios.portada ? p.foto_portada ?? null : null,
     servicios: p.servicios ?? [], ofertas: itemsPublicos(p.id).filter(i => ofertaVigente(i.oferta)).length, destacado: plan.beneficios.destacado,
-    sucursales: sucursalesPublicas(p), cupones: cuponesDe(c => c.pyme_id === p.id),
+    sucursales: sucursalesPublicas(p), cupones: cuponesDe(c => c.pyme_id === p.id), sin_reclamar: p.origen === 'publica',
   }
 }
+// En Explorar: negocios validados y fichas con información pública (sin dueño, en gris y sin sello).
+const enVitrina = (p: Pyme) => p.estado_verificacion === 'aprobada' || p.origen === 'publica'
 
 // ---------- Esquemas ----------
 // Autoría de los registros clínicos: se conserva al guardar la ficha completa.
@@ -498,7 +504,7 @@ on('GET', '/qr/:token', req => {
 })
 
 on('POST', '/qr/:token/mensajes', req => {
-  const { md } = medallaActiva(req.params.token)
+  const { md, m } = medallaActiva(req.params.token)
   const d = parse(z.object({
     mensaje: z.string().trim().min(10, 'El mensaje debe tener al menos 10 caracteres').max(500, 'El mensaje admite hasta 500 caracteres'),
     nombre: z.string().trim().max(80).optional(),
@@ -507,6 +513,12 @@ on('POST', '/qr/:token/mensajes', req => {
     longitud: z.number().min(-180).max(180).optional(),
   }), req.body)
   db.mensajes.push({ id: uid(), medalla_id: md.id, remitente_nombre: d.nombre || null, remitente_contacto: d.contacto || null, mensaje: d.mensaje, latitud: d.latitud != null ? String(d.latitud) : null, longitud: d.longitud != null ? String(d.longitud) : null, estado: 'nuevo', enviado_en: now() })
+  // Aviso al tutor por correo (en la demo, a la bandeja simulada).
+  const tutor = db.usuarios.find(u => u.id === m.tutor_id && u.estado === 'activo')
+  if (tutor) {
+    const c = correoAvisoQr(tutor.nombre_visible, m.nombre, d, baseApp())
+    enviarCorreo(tutor.correo, c.asunto, c.cuerpo, 'aviso_qr', c.detalles)
+  }
   return { ok: true }
 })
 
@@ -514,7 +526,7 @@ on('POST', '/qr/:token/mensajes', req => {
 // La comuna coincide con la casa matriz o con cualquier sucursal visible. Oro primero, luego Plata, luego el resto.
 on('GET', '/pymes', req => {
   const comuna = req.query.get('comuna'), rubro = req.query.get('rubro')
-  return db.pymes.filter(p => p.estado_verificacion === 'aprobada' && (!rubro || p.rubro === rubro)).map(pymeResumen)
+  return db.pymes.filter(p => enVitrina(p) && (!rubro || p.rubro === rubro)).map(pymeResumen)
     .filter(r => !comuna || r.comuna === comuna || r.sucursales.some(s => s.comuna === comuna))
     .sort((a, b) => b.destacado - a.destacado || a.nombre_comercial.localeCompare(b.nombre_comercial))
 })
@@ -559,11 +571,19 @@ on('POST', '/pymes', req => {
   const p: Pyme = {
     id: uid(), propietario_id: u.id, nombre_comercial: d.nombre_comercial, rut_empresa: d.rut_empresa, rubro: d.rubro, descripcion: d.descripcion ?? null, comuna_id: d.comuna_id,
     direccion: d.direccion ?? null, latitud: d.latitud != null ? String(d.latitud) : null, longitud: d.longitud != null ? String(d.longitud) : null,
-    telefono: d.telefono ?? null, whatsapp: d.whatsapp ?? null, horario: {}, servicios: [], estado_verificacion: 'pendiente', creado_en: now(),
+    telefono: d.telefono ?? null, whatsapp: d.whatsapp ?? null, horario: {}, servicios: [], estado_verificacion: 'pendiente', origen: 'registro', fuente: null, creado_en: now(),
   }
   db.pymes.push(p)
   // Gratis no genera cobro: la Pyme queda en plan Gratis al aprobarse. Un plan pagado espera la verificación del pago.
-  const cobro = plan.precio_mensual_clp > 0 ? registrarPago(p, plan, dayOffset(0), d.canal_pago, d.referencia_pago ?? null) : null
+  // En la demo Orcob está simulado; el API real lo rechaza (src/shared/pagos.ts).
+  const cobro = plan.precio_mensual_clp > 0 ? registrarPago(p, plan, dayOffset(0), d.canal_pago, d.referencia_pago || null) : null
+  // El equipo revisa la solicitud; la Pyme recibe cómo pagar si eligió un plan por transferencia.
+  const aviso = avisoSolicitud('alta', p.nombre_comercial, p.rut_empresa, comunaNombre(p.comuna_id), plan.nombre, plan.precio_mensual_clp, d.canal_pago, cobro?.canal === 'transferencia' ? cobro.referencia : null)
+  avisarAsesores(aviso.asunto, aviso.cuerpo)
+  if (cobro?.canal === 'transferencia') {
+    const c = correoSolicitudPlan(p.nombre_comercial, plan.nombre, plan.precio_mensual_clp, !!cobro.referencia)
+    enviarCorreo(u.correo, c.asunto, c.cuerpo, 'cobranza')
+  }
   return { id: p.id, estado_verificacion: p.estado_verificacion, codigo_orcob: cobro?.codigo_orcob ?? null }
 })
 
@@ -579,7 +599,7 @@ function registrarPago(p: Pyme, plan: Plan, inicio: string, canal: 'transferenci
 }
 
 on('GET', '/pymes/:id', req => {
-  const p = db.pymes.find(x => x.id === req.params.id && x.estado_verificacion === 'aprobada')
+  const p = db.pymes.find(x => x.id === req.params.id && enVitrina(x))
   if (!p) return fail(404, 'No encontrada')
   db.eventos.push({ id: uid(), pyme_id: p.id, item_id: null, tipo: 'visita_perfil', ocurrido_en: now() })
   // Las ofertas se muestran solo mientras están vigentes (y dentro del cupo del plan), y primero.
@@ -591,7 +611,7 @@ on('GET', '/pymes/:id', req => {
 
 on('POST', '/pymes/:id/eventos', req => {
   const d = parse(z.object({ tipo: z.enum(['vista_item', 'clic_contacto', 'clic_whatsapp']), item_id: z.string().optional() }), req.body)
-  if (db.pymes.some(p => p.id === req.params.id && p.estado_verificacion === 'aprobada')) db.eventos.push({ id: uid(), pyme_id: req.params.id, item_id: d.item_id ?? null, tipo: d.tipo, ocurrido_en: now() })
+  if (db.pymes.some(p => p.id === req.params.id && enVitrina(p))) db.eventos.push({ id: uid(), pyme_id: req.params.id, item_id: d.item_id ?? null, tipo: d.tipo, ocurrido_en: now() })
   return { ok: true }
 })
 
@@ -626,6 +646,8 @@ on('PATCH', '/pymes/:id/perfil', req => {
 
 on('POST', '/pymes/:id/contactos', req => {
   const u = auth(req, 'tutor')
+  // Una ficha pública no tiene a nadie del local que lea la consulta.
+  if (db.pymes.some(x => x.id === req.params.id && x.origen === 'publica')) return fail(422, CONSULTAS_NO_DISPONIBLES)
   const p = db.pymes.find(x => x.id === req.params.id && x.estado_verificacion === 'aprobada' && suscripcionActiva(x.id))
   if (!p) return fail(404, 'Negocio no disponible')
   const d = parse(businessContactSchema, req.body)
@@ -780,8 +802,9 @@ on('POST', '/pymes/:id/suscripcion', req => {
   const d = parse(z.object({
     plan_id: z.number().int().positive(),
     canal: z.enum(['transferencia', 'orcob']).default('transferencia'),
+    // Opcional: la Pyme puede pedir el plan y transferir después de recibir los datos; el asesor confirma el pago.
     referencia_pago: z.string().trim().max(60).optional(),
-  }).refine(x => x.canal === 'orcob' || (x.referencia_pago ?? '').length >= 3, { message: 'Ingresa la referencia de la transferencia', path: ['referencia_pago'] }), req.body)
+  }), req.body)
   if (p.estado_verificacion !== 'aprobada') return fail(422, 'Tu negocio debe estar verificado para renovar o cambiar de plan')
   if (pagoPendiente(p.id)) return fail(409, 'Ya tienes una solicitud de pago en revisión')
   const plan = PLANES.find(x => x.id === d.plan_id)
@@ -789,7 +812,13 @@ on('POST', '/pymes/:id/suscripcion', req => {
   if (plan.precio_mensual_clp === 0) return fail(422, 'El plan Gratis no requiere pago: rige automáticamente cuando termina tu periodo pagado')
   const actual = db.suscripciones.filter(s => s.pyme_id === p.id && s.estado === 'activa').sort((a, b) => b.fin.localeCompare(a.fin))[0]
   const inicio = actual && actual.fin > dayOffset(0) ? actual.fin : dayOffset(0)
-  const r = registrarPago(p, plan, inicio, d.canal, d.referencia_pago ?? null)
+  const r = registrarPago(p, plan, inicio, d.canal, d.referencia_pago || null)
+  const aviso = avisoSolicitud('plan', p.nombre_comercial, p.rut_empresa, '', plan.nombre, plan.precio_mensual_clp, d.canal, d.canal === 'transferencia' ? r.referencia : null)
+  avisarAsesores(aviso.asunto, aviso.cuerpo)
+  if (d.canal === 'transferencia') {
+    const c = correoSolicitudPlan(p.nombre_comercial, plan.nombre, plan.precio_mensual_clp, !!r.referencia)
+    enviarCorreo(db.usuarios.find(x => x.id === p.propietario_id)?.correo ?? '', c.asunto, c.cuerpo, 'cobranza')
+  }
   return { id: r.suscripcion.id, inicio: r.suscripcion.inicio, fin: r.suscripcion.fin, pago_id: r.id, codigo_orcob: r.codigo_orcob }
 })
 
@@ -1238,7 +1267,8 @@ on('GET', '/admin/pymes', req => {
   auth(req, 'admin', 'asesor')
   const estado = req.query.get('estado') || 'pendiente'
   // Pendientes incluye las renovaciones o cambios de plan de Pymes ya verificadas que esperan confirmar su pago.
-  return db.pymes.filter(p => p.estado_verificacion === estado || (estado === 'pendiente' && p.estado_verificacion === 'aprobada' && pagoPendiente(p.id)))
+  // Las fichas públicas no se revisan aquí: se validan cuando su dueño las reclama.
+  return db.pymes.filter(p => p.origen !== 'publica' && (p.estado_verificacion === estado || (estado === 'pendiente' && p.estado_verificacion === 'aprobada' && pagoPendiente(p.id))))
     .sort((a, b) => a.creado_en.localeCompare(b.creado_en)).map(p => {
       const pend = pagoPendiente(p.id), s = ultimaSuscripcion(p.id)
       const pago = pend ?? (s && db.pagos.find(pg => pg.suscripcion_id === s.id))
@@ -1257,6 +1287,7 @@ on('PATCH', '/admin/pymes/:id/verificacion', req => {
   const d = parse(z.object({ decision: z.enum(['aprobar', 'rechazar', 'suspender']) }), req.body)
   const p = db.pymes.find(x => x.id === req.params.id)
   if (!p) return fail(404, 'Pyme no encontrada')
+  if (p.origen === 'publica') return fail(422, FICHA_PUBLICA_SIN_DUENO)
   const subs = db.suscripciones.filter(s => s.pyme_id === p.id), ids = new Set(subs.map(s => s.id))
   const pendientes = subs.filter(s => s.estado === 'pendiente')
   const renovacion = p.estado_verificacion === 'aprobada' && pendientes.length > 0 && d.decision !== 'suspender'
@@ -1317,7 +1348,21 @@ function match(pattern: string, path: string): Record<string, string> | null {
 
 const wait = () => new Promise(resolve => setTimeout(resolve, 150 + Math.random() * 200))
 
-export async function handle(method: string, fullPath: string, body: unknown, session: Session | null): Promise<unknown> {
+// ---------- Límites de solicitudes (mismas reglas que el API: src/shared/limites.ts) ----------
+const desde = (segundos: number) => new Date(Date.now() - segundos * 1000).toISOString()
+function verificarLimites(limite: Limite) {
+  for (const r of limite.reglas) {
+    if (db.limites.filter(e => e.clave === r.clave && e.ocurrido_en > desde(r.segundos)).length >= r.max) fail(STATUS_DEMASIADOS, mensajeDemasiados(r.segundos))
+  }
+}
+function registrarEvento(limite: Limite) {
+  const ocurrido_en = now(), vigentes = desde(2 * 86_400)
+  db.limites = db.limites.filter(e => e.ocurrido_en >= vigentes)
+  for (const r of limite.reglas) db.limites.push({ clave: r.clave, ocurrido_en })
+}
+
+/** cliente: en el navegador siempre es el mismo ('local'); el API usa la huella de la IP. */
+export async function handle(method: string, fullPath: string, body: unknown, session: Session | null, cliente = 'local'): Promise<unknown> {
   await wait()
   refresh()
   const [path, qs = ''] = fullPath.split('?')
@@ -1326,8 +1371,19 @@ export async function handle(method: string, fullPath: string, body: unknown, se
     if (m !== method) continue
     const params = match(pattern, path)
     if (!params) continue
-    // Se trabaja sobre una copia para que la respuesta nunca comparta referencias con el estado interno.
-    const result = h({ params, query: new URLSearchParams(qs), body: body === undefined ? undefined : structuredClone(body), session })
+    const limite = limitesDe(method, path, body, cliente)
+    if (limite) verificarLimites(limite)
+    let result: unknown
+    try {
+      // Se trabaja sobre una copia para que la respuesta nunca comparta referencias con el estado interno.
+      result = h({ params, query: new URLSearchParams(qs), body: body === undefined ? undefined : structuredClone(body), session })
+    } catch (error) {
+      // Un intento fallido se guarda aunque la ruta no haya cambiado nada más.
+      if (limite && error instanceof ApiError && sumaEvento(limite, error.status)) { refresh(); registrarEvento(limite); save() }
+      throw error
+    }
+    if (limite && sumaEvento(limite, 200)) registrarEvento(limite)
+    if (limite?.limpiarAlExito) db.limites = db.limites.filter(e => e.clave !== limite.limpiarAlExito)
     if (method !== 'GET' || /^\/(qr|pymes|adopciones)\/[^/]+$/.test(path) || path === '/banners') save()
     return result === undefined ? undefined : structuredClone(result)
   }

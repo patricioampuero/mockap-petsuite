@@ -2,7 +2,8 @@
 // La vista pública usa una LISTA BLANCA: nunca medicamentos, historial, datos del tutor ni ids internos.
 import { z } from 'zod'
 import type { FichaDatos } from '../../src/shared/api'
-import { auth, type Usuario } from './auth'
+import { correoAvisoQr } from '../../src/shared/avisos'
+import { auth, baseApp, enviarCorreo, type Usuario } from './auth'
 import { fail, fecha, idDe, now, on, parse, porTexto, uid, una, type Req } from './core'
 import type { Sql } from './db'
 import { clinicasDe } from './negocio'
@@ -281,5 +282,20 @@ on('POST', '/qr/:token/mensajes', async req => {
   }), req.body)
   await req.sql('insert into mensajes_qr (id, medalla_id, remitente_nombre, remitente_contacto, mensaje, latitud, longitud, estado, enviado_en) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
     [uid(), m.medalla_id, d.nombre || null, d.contacto || null, d.mensaje, d.latitud ?? null, d.longitud ?? null, 'nuevo', now()])
+  // Aviso al tutor. Si el correo no sale, el mensaje igual queda guardado y el tutor lo ve en la ficha.
+  // La copia de la bandeja omite el mensaje y los datos de quien escribió.
+  const tutor = await una<{ correo: string; nombre_visible: string }>(req.sql, "select correo, nombre_visible from usuarios where id = $1 and estado = 'activo'", [m.tutor_id])
+  if (tutor) {
+    const c = correoAvisoQr(tutor.nombre_visible, m.nombre, d, baseApp())
+    // Punto de guardado: un error al registrar el aviso no puede deshacer el mensaje de quien encontró la mascota.
+    await req.sql('savepoint aviso_qr')
+    try {
+      await enviarCorreo(req.sql, tutor.correo, c.asunto, c.cuerpo, 'aviso_qr', c.detalles, { obligatorio: false, oculto: '[mensaje enviado solo al tutor]' })
+      await req.sql('release savepoint aviso_qr')
+    } catch (error) {
+      await req.sql('rollback to savepoint aviso_qr')
+      console.error('No se pudo registrar el aviso al tutor:', error)
+    }
+  }
   return { ok: true }
 })

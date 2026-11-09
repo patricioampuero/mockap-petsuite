@@ -26,6 +26,13 @@ export function formatMessage(eventName, event) {
   }
 
   const run = event.workflow_run
+  if (run.name === 'Salud') {
+    return [
+      '**La versión real de PetSuite o su base de datos no responden**',
+      'El control de /healthz falló tres veces seguidas. Revisa Vercel y Supabase (la base del plan gratuito puede estar pausada).',
+      `[Revisar el control](${run.html_url})`,
+    ].join('\n')
+  }
   return [
     '**Falló la publicación de PetSuite en GitHub Pages**',
     `**Rama:** \`${shortText(run.head_branch, 80)}\` · **Commit:** \`${run.head_sha.slice(0, 7)}\``,

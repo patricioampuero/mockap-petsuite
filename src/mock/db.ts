@@ -24,7 +24,8 @@ export type Medalla = { id: string; mascota_id: string; token: string; estado: '
 export type Escaneo = { id: string; medalla_id: string; ocurrido_en: string }
 export type MensajeQr = { id: string; medalla_id: string; remitente_nombre: string | null; remitente_contacto: string | null; mensaje: string; latitud: string | null; longitud: string | null; estado: 'nuevo' | 'leido' | 'respondido'; enviado_en: string }
 export type Acceso = { id: string; mascota_id: string; pyme_id: string; otorgado_por: string; permiso: 'lectura' | 'escritura'; vigente_hasta: string; revocado_en: string | null }
-export type Pyme = { id: string; propietario_id: string; nombre_comercial: string; rut_empresa: string; rubro: Rubro; descripcion: string | null; comuna_id: number; direccion: string | null; latitud: string | null; longitud: string | null; telefono: string | null; whatsapp: string | null; horario: Record<string, string>; servicios: string[]; foto_portada?: string | null; estado_verificacion: Verificacion; creado_en: string }
+// origen 'publica': ficha armada con datos públicos, sin dueño (propietario_id y rut_empresa vacíos; null en la base).
+export type Pyme = { id: string; propietario_id: string; nombre_comercial: string; rut_empresa: string; rubro: Rubro; descripcion: string | null; comuna_id: number; direccion: string | null; latitud: string | null; longitud: string | null; telefono: string | null; whatsapp: string | null; horario: Record<string, string>; servicios: string[]; foto_portada?: string | null; estado_verificacion: Verificacion; origen: 'registro' | 'publica'; fuente: string | null; creado_en: string }
 // Multitenant: una Pyme (empresa) tiene su casa matriz (los datos de la Pyme) y sucursales adicionales.
 export type Sucursal = { id: string; pyme_id: string; nombre: string; comuna_id: number; direccion: string | null; latitud: string | null; longitud: string | null; telefono: string | null; whatsapp: string | null; horario: Record<string, string>; descripcion: string | null; servicios: string[]; creado_en: string }
 // Equipo interno: cuentas de jefes de local o personal clínico con permisos por módulo. sucursal_id null = casa matriz.
@@ -72,7 +73,9 @@ export type Convenio = {
   premios: { mes: string; otorgado_en: string }[]; creado_en: string
 }
 export type Canje = { id: string; convenio_id: string; sucursal_id: string | null; monto_clp: number | null; registrado_por: string; ocurrido_en: string }
-export type Correo = { id: string; para: string; asunto: string; cuerpo: string; tipo: 'bienvenida' | 'verificacion' | 'restablecer' | 'cuenta_creada' | 'cuenta_equipo' | 'aprobacion' | 'convenio' | 'cobranza' | 'privacidad' | 'premio'; enviado_en: string }
+export type Correo = { id: string; para: string; asunto: string; cuerpo: string; tipo: 'bienvenida' | 'verificacion' | 'restablecer' | 'cuenta_creada' | 'cuenta_equipo' | 'aprobacion' | 'convenio' | 'cobranza' | 'privacidad' | 'premio' | 'aviso_qr'; enviado_en: string }
+/** Evento contado por los límites de solicitudes (src/shared/limites.ts). */
+export type EventoLimite = { clave: string; ocurrido_en: string }
 // Derechos ARSOPOL de la Ley 21.719: acceso, rectificación, supresión, oposición, portabilidad y bloqueo.
 export type SolicitudPrivacidad = { id: string; usuario_id: string; derecho: 'acceso' | 'rectificacion' | 'supresion' | 'oposicion' | 'portabilidad' | 'bloqueo'; detalle: string; estado: 'recibida' | 'en_proceso' | 'respondida' | 'rechazada'; respuesta: string | null; creado_en: string; vence_en: string; respondido_en: string | null }
 
@@ -109,11 +112,12 @@ export type Db = {
   correos: Correo[]
   solicitudes_privacidad: SolicitudPrivacidad[]
   tokens_cuenta: TokenCuenta[]
+  limites: EventoLimite[]
 }
 
-// v4: confirmación de correo, recuperación de contraseña e invitaciones con enlace. Los datos anteriores se descartan.
-export const STORAGE_KEY = 'petsuite-mock-db-v5'
-try { for (const old of ['petsuite-mock-db-v1', 'petsuite-mock-db-v2', 'petsuite-mock-db-v3', 'petsuite-mock-db-v4']) localStorage.removeItem(old) } catch { /* sin almacenamiento */ }
+// v6: límites de solicitudes y aviso al tutor desde el QR. Los datos anteriores se descartan.
+export const STORAGE_KEY = 'petsuite-mock-db-v6'
+try { for (const old of ['petsuite-mock-db-v1', 'petsuite-mock-db-v2', 'petsuite-mock-db-v3', 'petsuite-mock-db-v4', 'petsuite-mock-db-v5']) localStorage.removeItem(old) } catch { /* sin almacenamiento */ }
 export const CLAVE_DEMO = 'petsuite123'
 export { VERSION_PRIVACIDAD }
 
@@ -141,7 +145,7 @@ function seed(): Db {
     comunas: ['Osorno', 'Puerto Montt', 'Castro', 'Puerto Octay', 'Purranque', 'Puyehue', 'Río Negro', 'San Juan de la Costa', 'San Pablo', 'Calbuco', 'Cochamó', 'Fresia', 'Frutillar', 'Llanquihue', 'Los Muermos', 'Maullín', 'Puerto Varas', 'Ancud', 'Chonchi', 'Curaco de Vélez', 'Dalcahue', 'Puqueldón', 'Queilén', 'Quellón', 'Quemchi', 'Quinchao', 'Chaitén', 'Futaleufú', 'Hualaihué', 'Palena'].map((nombre, i) => ({ id: i + 1, nombre })),
     usuarios: [], sesiones: {}, mascotas: [], medallas: [], escaneos: [], mensajes: [], accesos: [], pymes: [], sucursales: [], miembros: [], catalogo: [], eventos: [], contactos_pymes: [],
     suscripciones: [], pagos: [], casos_cobranza: [], publicaciones: [], comentarios: [], reacciones: [], guardados: [], reportes: [], ongs: [], animales: [], solicitudes: [], eventos_adopcion: [],
-    banners: [], convenios: [], canjes: [], correos: [], solicitudes_privacidad: [], tokens_cuenta: [],
+    banners: [], convenios: [], canjes: [], correos: [], solicitudes_privacidad: [], tokens_cuenta: [], limites: [],
   }
   const user = (correo: string, rol: ApiRole, nombre: string, comuna: number) => {
     const creado = t()
@@ -163,7 +167,7 @@ function seed(): Db {
   const pyme = (owner: string, nombre: string, rut: string, rubro: Rubro, comuna: number, direccion: string, lat: number, lng: number, servicios: string[], plan: { id: number; monto: number; inicio: number; fin: number; canal: Pago['canal'] }) => {
     const p: Pyme = {
       id: uid(), propietario_id: owner, nombre_comercial: nombre, rut_empresa: rut, rubro, descripcion: `${nombre}: atención cercana para tu mascota.`, comuna_id: comuna,
-      direccion, latitud: String(lat), longitud: String(lng), telefono: null, whatsapp: null, horario: { 'lun-vie': '09:00-18:00', sab: '10:00-14:00' }, servicios, estado_verificacion: 'aprobada', creado_en: t(),
+      direccion, latitud: String(lat), longitud: String(lng), telefono: null, whatsapp: null, horario: { 'lun-vie': '09:00-18:00', sab: '10:00-14:00' }, servicios, estado_verificacion: 'aprobada', origen: 'registro', fuente: null, creado_en: t(),
     }
     db.pymes.push(p)
     const s: Suscripcion = { id: uid(), pyme_id: p.id, plan_id: plan.id, inicio: dayOffset(plan.inicio), fin: dayOffset(plan.fin), estado: 'activa' }

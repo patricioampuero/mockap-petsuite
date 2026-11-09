@@ -1,0 +1,34 @@
+# ==========================================================================================================
+# Comprueba dos veces al día que la versión real responda y que su base de datos conteste (/healthz).
+# La consulta también mantiene activa la base del plan gratuito de Supabase, que se pausa tras 7 días sin uso.
+# Si falla, Discord lo avisa (discord-notifications.yml) y GitHub envía un correo a quien editó este archivo.
+# ==========================================================================================================
+name: Salud
+
+on:
+  schedule:
+    # 11:23 y 23:23 UTC (08:23 y 20:23 en Chile en horario de verano).
+    - cron: '23 11,23 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  salud:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar /healthz
+        env:
+          # Variable del repositorio SALUD_URL (por ejemplo https://petsuite.space); si falta, la dirección de Vercel.
+          URL_SALUD: ${{ vars.SALUD_URL || 'https://mockap-petsuite.vercel.app' }}
+        run: |
+          for intento in 1 2 3; do
+            if curl -fsSL --max-time 30 "$URL_SALUD/healthz" | grep -q '"base":"ok"'; then
+              echo "La versión real y su base de datos responden."
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::error::La versión real o su base de datos no responden en $URL_SALUD/healthz"
+          exit 1

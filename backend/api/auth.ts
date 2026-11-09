@@ -79,7 +79,7 @@ export async function permisosDe(sql: Sql, u: Pick<Usuario, 'id' | 'rol'>): Prom
   return []
 }
 
-export type Correo = { id: string; para: string; asunto: string; cuerpo: string; tipo: 'bienvenida' | 'verificacion' | 'restablecer' | 'cuenta_creada' | 'cuenta_equipo' | 'aprobacion' | 'convenio' | 'cobranza' | 'privacidad' | 'premio'; enviado_en: string }
+export type Correo = { id: string; para: string; asunto: string; cuerpo: string; tipo: 'bienvenida' | 'verificacion' | 'restablecer' | 'cuenta_creada' | 'cuenta_equipo' | 'aprobacion' | 'convenio' | 'cobranza' | 'privacidad' | 'premio' | 'aviso_qr'; enviado_en: string }
 
 // ---------- Correo ----------
 // Con RESEND_API_KEY y MAIL_FROM, el correo sale por Resend y la bandeja (tabla correos) guarda una copia sin el
@@ -87,12 +87,18 @@ export type Correo = { id: string; para: string; asunto: string; cuerpo: string;
 // la bandeja es el único canal y guarda el correo completo, igual que el mock.
 const OCULTO = '[enlace enviado solo al destinatario]'
 
-export async function enviarCorreo(sql: Sql, para: string, asunto: string, cuerpo: string, tipo: Correo['tipo'], privado?: string) {
+/**
+ * privado: parte del cuerpo que solo recibe el destinatario (un enlace de acceso o datos de un tercero); la copia
+ * de la bandeja la reemplaza por oculto. obligatorio: si el envío falla, la solicitud responde 502 y se deshace;
+ * por defecto, solo cuando hay un enlace privado que la persona está esperando.
+ */
+export async function enviarCorreo(sql: Sql, para: string, asunto: string, cuerpo: string, tipo: Correo['tipo'], privado?: string,
+  { obligatorio = !!privado, oculto = OCULTO }: { obligatorio?: boolean; oculto?: string } = {}) {
   if (!para) return
   const clave = process.env.RESEND_API_KEY, remitente = process.env.MAIL_FROM
   const real = !!(clave && remitente)
-  await sql('insert into correos (id, para, asunto, cuerpo, tipo, enviado_en) values ($1, $2, $3, $4, $5, $6)', [uid(), para, asunto, real && privado ? cuerpo.split(privado).join(OCULTO) : cuerpo, tipo, now()])
-  if (real && !(await enviarPorResend(clave, remitente, para, asunto, cuerpo)) && privado) {
+  await sql('insert into correos (id, para, asunto, cuerpo, tipo, enviado_en) values ($1, $2, $3, $4, $5, $6)', [uid(), para, asunto, real && privado ? cuerpo.split(privado).join(oculto) : cuerpo, tipo, now()])
+  if (real && !(await enviarPorResend(clave, remitente, para, asunto, cuerpo)) && obligatorio) {
     // Sin el correo, la persona quedaría esperando un enlace que nunca llega: la solicitud falla y se deshace.
     fail(502, 'No pudimos enviar el correo. Inténtalo de nuevo en unos minutos.')
   }
@@ -115,7 +121,7 @@ async function enviarPorResend(clave: string, remitente: string, para: string, a
 }
 
 // ---------- Enlaces de cuenta ----------
-const baseApp = () => process.env.APP_URL || 'http://localhost:5173/'
+export const baseApp = () => process.env.APP_URL || 'http://localhost:5173/'
 
 /** Segundos desde el último enlace de ese tipo para la cuenta (Infinity si nunca se envió). */
 export async function segundosDesdeEnvio(sql: Sql, usuarioId: string, tipo: TipoToken) {
@@ -143,7 +149,12 @@ export async function usarToken(sql: Sql, token: string, tipos: TipoToken[]) {
 export async function correoDe(sql: Sql, usuarioId: string | null | undefined) {
   return usuarioId ? (await una<{ correo: string }>(sql, 'select correo from usuarios where id = $1', [usuarioId]))?.correo ?? '' : ''
 }
+/** Avisa a los asesores activos; si todavía no hay ninguno (base real recién creada), a los administradores. */
 export async function avisarAsesores(sql: Sql, asunto: string, cuerpo: string) {
-  const asesores = await sql<{ correo: string }>("select correo from usuarios where rol = 'asesor' and estado = 'activo' order by creado_en")
-  for (const a of asesores) await enviarCorreo(sql, a.correo, asunto, cuerpo, 'aprobacion')
+  let equipo = await sql<{ correo: string }>("select correo from usuarios where rol = 'asesor' and estado = 'activo' order by creado_en")
+  if (!equipo.length) equipo = await sql<{ correo: string }>("select correo from usuarios where rol = 'admin' and estado = 'activo' order by creado_en")
+  for (const a of equipo) await enviarCorreo(sql, a.correo, asunto, cuerpo, 'aprobacion')
 }
+
+/** Orcob está simulado: el API lo acepta solo con ORCOB_SIMULADO=1 (pruebas). En la versión real se paga por transferencia. */
+export const orcobDisponible = () => process.env.ORCOB_SIMULADO === '1'
