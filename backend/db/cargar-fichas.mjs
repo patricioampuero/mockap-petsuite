@@ -14,12 +14,15 @@ const ficha = z.object({
   rubro: z.enum(['veterinaria', 'tienda', 'peluqueria', 'otro']),
   comuna: z.string().trim().min(2),
   direccion: z.string().trim().min(3).max(200),
-  latitud: z.number().min(-56).max(-17),
-  longitud: z.number().min(-110).max(-66),
+  // Solo con un punto exacto (por ejemplo, el del local en OpenStreetMap). Sin él, la ficha aparece en la lista sin pin
+  // y «Cómo llegar» busca la dirección escrita: un punto aproximado llevaría a otra cuadra.
+  latitud: z.number().min(-56).max(-17).nullable().default(null),
+  longitud: z.number().min(-110).max(-66).nullable().default(null),
   telefono,
   whatsapp: telefono,
   fuente: z.string().trim().min(5).max(500),
 })
+  .refine(f => (f.latitud === null) === (f.longitud === null), 'Latitud y longitud van juntas')
 const archivo = z.object({ fichas: z.array(ficha).min(1) })
 
 // Mismo nombre en la misma comuna = mismo negocio (sin tildes, mayúsculas ni signos).

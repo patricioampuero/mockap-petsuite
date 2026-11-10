@@ -37,4 +37,9 @@ test('unreported hours and invalid or missing coordinates are handled explicitly
   assert.equal(directionsUrl(null, null), null)
   assert.equal(directionsUrl('91', '-73'), null)
   assert.equal(directionsUrl('-40.5735', '-73.1335'), 'https://www.google.com/maps/dir/?api=1&destination=-40.5735,-73.1335')
+  // Sin coordenadas confiables, la ruta va a la dirección escrita; las coordenadas válidas siempre tienen prioridad.
+  assert.equal(directionsUrl(null, null, 'Zenteno 1615, Osorno'), 'https://www.google.com/maps/dir/?api=1&destination=Zenteno%201615%2C%20Osorno%2C%20Chile')
+  assert.equal(directionsUrl('91', '-73', 'Zenteno 1615, Osorno'), 'https://www.google.com/maps/dir/?api=1&destination=Zenteno%201615%2C%20Osorno%2C%20Chile')
+  assert.equal(directionsUrl('-40.5735', '-73.1335', 'Zenteno 1615, Osorno'), 'https://www.google.com/maps/dir/?api=1&destination=-40.5735,-73.1335')
+  assert.equal(directionsUrl(null, null, '  '), null)
 })

@@ -20,7 +20,8 @@ const datos = {
   fichas: [
     { nombre: 'Veterinaria Ejemplo Rahue', rubro: 'veterinaria', comuna: 'Osorno', direccion: 'Calle Ejemplo 100, Osorno', latitud: -40.574, longitud: -73.15, telefono: '+56642111111', fuente: 'https://ejemplo.test/veterinaria' },
     { nombre: 'VETERINARIA EJEMPLO RAHÚE', rubro: 'veterinaria', comuna: 'Osorno', direccion: 'Calle Ejemplo 100, Osorno', latitud: -40.574, longitud: -73.15, fuente: 'https://ejemplo.test/duplicada' },
-    { nombre: 'Pet Shop Ejemplo Angelmó', rubro: 'tienda', comuna: 'Puerto Montt', direccion: 'Avenida Ejemplo 200, Puerto Montt', latitud: -41.48, longitud: -72.95, whatsapp: '+56911111111', fuente: 'https://ejemplo.test/tienda' },
+    // Sin punto exacto: aparece en la lista sin pin y «Cómo llegar» usa la dirección escrita.
+    { nombre: 'Pet Shop Ejemplo Angelmó', rubro: 'tienda', comuna: 'Puerto Montt', direccion: 'Avenida Ejemplo 200', whatsapp: '+56911111111', fuente: 'https://ejemplo.test/tienda' },
   ],
 }
 
@@ -39,6 +40,9 @@ test('carga las fichas sin duplicar, primero en simulación', async () => {
 
     await assert.rejects(() => cargarFichas(client, { fichas: [{ ...datos.fichas[0], comuna: 'Santiago' }] }, silencio), /Comuna desconocida/)
     await assert.rejects(() => cargarFichas(client, { fichas: [{ ...datos.fichas[0], telefono: '642111111' }] }, silencio), /\+56/)
+    await assert.rejects(() => cargarFichas(client, { fichas: [{ ...datos.fichas[0], nombre: 'Otra', longitud: null }] }, silencio), /van juntas/)
+    const { rows: [sinPunto] } = await client.query("select latitud, longitud from pymes where nombre_comercial = 'Pet Shop Ejemplo Angelmó'")
+    assert.deepEqual(sinPunto, { latitud: null, longitud: null })
 
     // El API la muestra en Explorar, sin datos de registro.
     const handle = createApi(database)

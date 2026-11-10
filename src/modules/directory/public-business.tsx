@@ -26,7 +26,7 @@ export function PublicBusiness({ id }: { id: string }) {
   if (!pyme) return <div className="public-site"><PublicHeader current="explorar" /><main className="local-main">{volver}{error ? <ErrorState message={error} onRetry={load} /> : <LoadingState label="Cargando el perfil del negocio" rows={2} />}</main><PublicFooter /></div>
 
   const status = statusForBusiness(pyme, now)
-  const comoLlegar = directionsUrl(pyme.latitud, pyme.longitud)
+  const comoLlegar = directionsUrl(pyme.latitud, pyme.longitud, pyme.direccion && `${pyme.direccion}, ${pyme.comuna}`)
   const wa = pyme.whatsapp?.replace(/\D/g, '')
   const horario = Object.entries(pyme.horario || {}).filter(([, h]) => h?.trim())
   const conUbicacion = pyme.latitud != null && pyme.longitud != null

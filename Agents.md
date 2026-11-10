@@ -1036,3 +1036,35 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
     - una Pyme validada no puede usar Orcob, y confirmar un pago Orcob responde 403.
   - La paridad sigue igual en ambos backends, con Orcob simulado en el API y la referencia ahora opcional.
   - Revisión en Chromium con una build con `VITE_API_URL` contra `backend/server.mjs`: el alta de una cuenta de Pyme nueva con el plan Oro y el cambio de plan de Huellitas Osorno, a 1366 y 390 px, en claro y oscuro. Sin menciones de Orcob, con «Cómo pagar», sin errores de JavaScript ni desplazamiento horizontal.
+
+### Migraciones 006 y 007 en la base real y primeras fichas públicas de Osorno y Puerto Montt
+
+- Fecha: 2026-11-09.
+- Rama: `patricioampuero/fichas-osorno-puerto-montt`, creada desde `origin/main` después de la fusión del PR #11.
+- Archivos agregados: `backend/db/fichas/los-lagos.json`.
+- Archivos modificados: `backend/db/cargar-fichas.mjs`, `backend/db/fichas.test.mjs`, `src/modules/directory/directory-hours.ts`, `src/modules/directory/directory-hours.test.mjs`, `src/modules/directory/public-business.tsx`, `src/modules/directory/directory.tsx` y `Agents.md`.
+- Cambio realizado:
+  - **Migraciones.** Se aplicaron la 006 y la 007 en la base real con `node --env-file=.env.production.local backend/db/migrate.mjs`. El PR #11 se fusionó antes, así que la versión publicada corrió unos minutos sin la columna `origen`, y en ese rato `GET /pymes` pudo fallar. Después de aplicarlas, `/healthz` responde `"base":"ok"` y `GET /pymes` responde 200.
+  - **Base de la demo.** La migración no se pudo aplicar: el pooler de Supabase responde «tenant/user not found», lo habitual cuando el plan gratuito pausó el proyecto. La demo de GitHub Pages no se ve afectada, porque usa el mock. Para reactivarla hay que entrar al panel de Supabase.
+  - **12 fichas con información pública**, cargadas en la base real con `cargar-fichas.mjs`: 4 veterinarias en Osorno y 8 en Puerto Montt.
+    - Cada una está confirmada en al menos dos fuentes públicas, citadas en su campo `fuente`: Mercantil, Genealog, AgendaPro, OpenStreetMap, Radio Antillanca y el sitio del negocio.
+    - Se descartaron los negocios que aparecían en una sola fuente o con direcciones distintas según la fuente: Superzoo Osorno, La Casa de las Mascotas, GeoPet, Mundo Animal, Antihual, Zoonavet, Amanecer, Pets Life y otros.
+    - No se incluyeron teléfonos celulares ni datos de personas naturales.
+    - No hay tiendas de mascotas: ninguna se pudo confirmar en dos fuentes.
+  - **Ubicación.**
+    - Solo las 3 fichas que tienen un punto exacto en OpenStreetMap llevan coordenadas.
+    - Nominatim solo ubicaba la calle (en avenidas largas como Zenteno el pin habría quedado a kilómetros), así que las demás se cargaron sin coordenadas. Aparecen en la lista, pero no en el mapa.
+    - `directionsUrl` acepta ahora la dirección escrita: sin coordenadas válidas, «Cómo llegar» abre Google Maps con «dirección, comuna, Chile». El perfil público y el directorio la usan. Esa parte de la interfaz llega cuando se fusione esta rama.
+    - `cargar-fichas.mjs` acepta fichas sin coordenadas, y exige que la latitud y la longitud vayan juntas.
+- Motivo: el usuario pidió que la versión real no se viera vacía, con negocios reales de la región.
+- Pendiente:
+  - Sumar más comunas y tiendas de mascotas cuando haya fuentes que se puedan cruzar.
+  - Reactivar la base de la demo en Supabase y aplicarle las migraciones 006 y 007.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 48 de 48.
+    - `fichas.test.mjs` suma una ficha sin coordenadas y el rechazo de una con solo latitud.
+    - `directory-hours.test.mjs` suma la ruta por dirección, y comprueba que las coordenadas válidas siguen teniendo prioridad.
+  - Simulación de la carga contra la base real (12 nuevas, 0 repetidas) y luego la carga.
+  - `GET https://www.petsuite.space/api/v1/pymes` devuelve las 12 con `sin_reclamar: true`.
+  - En Chromium sobre `www.petsuite.space`: Explorar en Puerto Montt a 1366 px muestra 8 tarjetas en gris y 3 pines punteados, y en Osorno a 390 px muestra 4. Sin errores de JavaScript ni desplazamiento horizontal.

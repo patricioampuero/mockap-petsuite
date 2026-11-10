@@ -1,0 +1,103 @@
+{
+  "descripcion": "Fichas con información pública de veterinarias de Osorno y Puerto Montt. Cada una está confirmada en al menos dos fuentes públicas (directorios de empresas, AgendaPro, OpenStreetMap, prensa o el sitio del negocio). Solo las que tienen un punto exacto en OpenStreetMap llevan coordenadas; las demás aparecen sin pin y «Cómo llegar» busca su dirección. Revisado el 2026-11-09. Datos de OpenStreetMap: © colaboradores de OpenStreetMap, ODbL.",
+  "fichas": [
+    {
+      "nombre": "Centro Médico Veterinario San Francisco",
+      "rubro": "veterinaria",
+      "comuna": "Osorno",
+      "direccion": "Zenteno 1615",
+      "fuente": "https://agendapro.com/mp/cl/pl/centro-medico-veterinario-san-francisco-osorno/36931 · https://mercantil.com/empresa/centro-medico-veterinario-san-francisco/osorno/300350428/esp"
+    },
+    {
+      "nombre": "Centro Médico Veterinario del Sur",
+      "rubro": "veterinaria",
+      "comuna": "Osorno",
+      "direccion": "Avenida Manuel Rodríguez 1941",
+      "telefono": "+56642242116",
+      "fuente": "https://agendapro.com/mp/cl/pl/centro-medico-veterinario-del-sur-osorno/36936 · https://mercantil.com/empresa/vetersur-ltda/osorno/300026217/esp"
+    },
+    {
+      "nombre": "Veterinaria Pehuén",
+      "rubro": "veterinaria",
+      "comuna": "Osorno",
+      "direccion": "Avenida Ignacio Zenteno 774",
+      "telefono": "+56642236591",
+      "fuente": "https://mercantil.com/empresa/veterinaria-pehuen-osorno/osorno/300046010/esp · https://www.genealog.cl/Geneanexus/empresa/CHILE/TODM3TwNDEyNC00jTw/nombre-y-rut/VETERINARIA-PEHUEN-OSORNO-8374124-4"
+    },
+    {
+      "nombre": "Central Veterinaria Los Lagos",
+      "rubro": "veterinaria",
+      "comuna": "Osorno",
+      "direccion": "Diego de Almagro 1003",
+      "fuente": "https://agendapro.com/mp/cl/pl/central-veterinaria-los-lagos-osorno/228128 · https://synara.ar/en/business-directory/company/central-veterinaria-los-lagos-19945140"
+    },
+    {
+      "nombre": "Clínica Veterinaria Puerto Montt",
+      "rubro": "veterinaria",
+      "comuna": "Puerto Montt",
+      "direccion": "Avenida Crucero 2045",
+      "latitud": -41.4791199,
+      "longitud": -72.9699713,
+      "fuente": "https://www.openstreetmap.org/way/1019843512 · https://agendapro.com/mp/cl/pl/clinica-veterinaria-puerto-montt-puerto-montt/37722 · https://mercantil.com/clinicas-veterinarias/los-lagos/1896"
+    },
+    {
+      "nombre": "Posta Veterinaria",
+      "rubro": "veterinaria",
+      "comuna": "Puerto Montt",
+      "direccion": "Avenida Crucero 1929",
+      "latitud": -41.4771592,
+      "longitud": -72.9679732,
+      "telefono": "+56652260270",
+      "fuente": "https://www.openstreetmap.org/node/4185458701 · https://agendapro.com/mp/cl/pl/clinica-veterinaria-puerto-montt-puerto-montt/37722"
+    },
+    {
+      "nombre": "Clínica Veterinaria Los Lagos",
+      "rubro": "veterinaria",
+      "comuna": "Puerto Montt",
+      "direccion": "Edmundo Lobos",
+      "latitud": -41.4629142,
+      "longitud": -72.9342765,
+      "fuente": "https://www.openstreetmap.org/node/13606812101 · https://agendapro.com/mp/cl/pl/clinica-veterinaria-los-lagos-puerto-montt/37748"
+    },
+    {
+      "nombre": "Clínica Veterinaria Austral",
+      "rubro": "veterinaria",
+      "comuna": "Puerto Montt",
+      "direccion": "Avenida Presidente Ibáñez 0312",
+      "telefono": "+56652430010",
+      "fuente": "https://mercantil.com/empresa/clinica-veterinaria-austral/puerto-montt/300120560/esp · https://agendapro.com/mp/cl/pl/clinica-veterinaria-austral-puerto-montt/37744"
+    },
+    {
+      "nombre": "Clínica Veterinaria Petrohué",
+      "rubro": "veterinaria",
+      "comuna": "Puerto Montt",
+      "direccion": "Santa María 600",
+      "telefono": "+56652313192",
+      "fuente": "https://mercantil.com/empresa/clinica-veterinaria-petrohue/puerto-montt/300110052/esp · https://agendapro.com/mp/cl/pl/clinica-veterinaria-petrohue-puerto-montt/37743 · http://www.veterinariapetrohue.cl"
+    },
+    {
+      "nombre": "Veterinaria Antupirén",
+      "rubro": "veterinaria",
+      "comuna": "Puerto Montt",
+      "direccion": "Pasaje Nuevo 12 5118, Valle Volcanes",
+      "telefono": "+56652284498",
+      "fuente": "https://mercantil.com/empresa/mevepa-los-lagos/puerto-montt/300243424/esp · https://agendapro.com/mp/cl/pl/veterinaria-antupiren-puerto-montt/37754"
+    },
+    {
+      "nombre": "Hospital Clínico Veterinario Universidad Santo Tomás",
+      "rubro": "veterinaria",
+      "comuna": "Puerto Montt",
+      "direccion": "Alcalde Juan Yuraszeck 70",
+      "telefono": "+56652288473",
+      "fuente": "https://radioantillanca.cl/?p=25314 · https://agendapro.com/mp/cl/pl/hospital-clinico-veterinario-ust-puerto-montt/242475"
+    },
+    {
+      "nombre": "Gupi's",
+      "rubro": "veterinaria",
+      "comuna": "Puerto Montt",
+      "direccion": "Avenida Presidente Ibáñez 79",
+      "telefono": "+56652313747",
+      "fuente": "https://mercantil.com/empresa/gupi%C2%B4s/puerto-montt/300243503/esp · https://www.genealog.cl/Geneanexus/empresa/CHILE/TNzY3TwNTc0MzAtNA-jTw/nombre-y-rut/GUPI-S-76757430-4"
+    }
+  ]
+}

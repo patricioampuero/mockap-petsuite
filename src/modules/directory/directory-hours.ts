@@ -81,9 +81,14 @@ export function statusForBusiness(place: ScheduledBusiness, now: Date): OpenStat
 
 export const isOpenNow = (place: ScheduledBusiness, now: Date) => statusForBusiness(place, now).open
 
-export const directionsUrl = (lat: string | null | undefined, lng: string | null | undefined) => {
-  if (lat == null || lng == null || !lat.trim() || !lng.trim()) return null
-  const latitude = Number(lat), longitude = Number(lng)
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null
-  return `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`
+/**
+ * Ruta en Google Maps hasta el negocio. Con coordenadas válidas va al punto exacto; sin ellas, a la dirección escrita
+ * (algunas fichas con información pública no tienen un punto confiable, y un punto aproximado llevaría a otra cuadra).
+ */
+export const directionsUrl = (lat: string | null | undefined, lng: string | null | undefined, direccion?: string | null) => {
+  const latitude = lat?.trim() ? Number(lat) : NaN, longitude = lng?.trim() ? Number(lng) : NaN
+  if (Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`
+  }
+  return direccion?.trim() ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${direccion.trim()}, Chile`)}` : null
 }
