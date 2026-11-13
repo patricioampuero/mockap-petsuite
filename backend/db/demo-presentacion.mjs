@@ -202,4 +202,3 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     await pool?.end()
   }
 }
-
