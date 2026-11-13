@@ -77,7 +77,7 @@ Estas reglas resumen errores que ya ocurrieron. Léelas antes de cada tarea.
 
 PetSuite dejó de ser solo una demostración. La demo, con el mock y la clave `petsuite123`, sigue en GitHub Pages; la versión real usa otra base.
 
-- La base real no tiene cuentas demo: nunca ejecutes `npm run db:seed` en ella. El administrador y los asesores se crean con `backend/db/crear-admin.mjs` (`npm run db:crear-admin` y `npm run db:crear-asesor`).
+- La base real no tiene cuentas demo: nunca ejecutes `npm run db:seed` en ella. La única excepción son las cuentas temporales `@demo.petsuite.space` de `backend/db/demo-presentacion.mjs`, para presentar el proyecto; se quitan con `--quitar --aplicar` apenas termina la presentación. El administrador y los asesores se crean con `backend/db/crear-admin.mjs` (`npm run db:crear-admin` y `npm run db:crear-asesor`).
 - `.env` apunta a la base de la demo y `npm run db:*` lo lee. La base real está en `.env.production.local`, que Git ignora, y sus comandos se ejecutan con `node --env-file=.env.production.local backend/db/<script>.mjs`.
 - La versión real se publica en Vercel: frontend y API en un mismo proyecto, con `npm run build:vercel`. Las variables de la base van solo en el entorno Production, para que las vistas previas de los PR no la toquen. La atención HTTP está en `backend/http.mjs`, compartida por el servidor local y la función.
 - Ninguna clave viaja por correo. Las cuentas que crea una Pyme o un asesor reciben una invitación para crear la suya.
@@ -1166,3 +1166,29 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
   - `npm test`: 58 de 58. `explore-search.test.mjs` suma el motivo de la coincidencia. La paridad suma la prioridad: marcar, cambiar, animal en proceso (422), animal de otra ONG (404), dato inválido (400), tutor (403) y quitar.
   - En Chromium, con la build real contra el API real sobre PGlite: «cortes» en Explorar, el perfil de la clínica con su teléfono y la prioridad en «Mis animales» y en Adopciones, a 1366 px en claro y a 390 px en oscuro. Sin errores de JavaScript ni desplazamiento horizontal.
+### Datos de demostración en la versión real
+
+- Fecha: 2026-11-13.
+- Rama: `patricioampuero/demo-presentacion-real`, creada sobre `patricioampuero/ajustes-revision-profesor`. Se fusiona después de ella.
+- Archivos agregados: `backend/db/demo-presentacion.mjs`, `backend/db/demo-presentacion.test.mjs` y `src/shared/demo.ts`.
+- Archivos modificados: `backend/db/seed.mjs` (exporta `datosDemo`, `filas` e `insertar`), `backend/api/auth.ts`, `backend/README.md`, `package.json` y `Agents.md` (excepción a la regla de la base real).
+- Cambio realizado:
+  - **Carga.** `node --env-file=.env.production.local backend/db/demo-presentacion.mjs --clave "…" [--aplicar]` agrega a la base real los datos del seed del mock, junto a los reales. Sin `--aplicar` solo simula.
+    - Las cuentas terminan en `@demo.petsuite.space` y usan la clave indicada (10 caracteres o más), que no queda en el repositorio.
+    - No crea administrador ni asesor, porque tendrían acceso a los datos reales.
+    - Los negocios y las ONG llevan «(demo)» en el nombre. Los pagos Orcob de la demo pasan a transferencias, y no se cargan la bandeja ni la cobranza del mock.
+    - Agrega `nuevo@`, un negocio en verificación sin documentos para mostrar la subida y la revisión, y 60 días de actividad (visitas, vistas y clics) para que los KPI tengan datos.
+    - Se niega a cargar si ya hay cuentas de demostración.
+  - **Quitar.** `--quitar [--aplicar]` borra las cuentas del dominio de demostración y todo lo que depende de ellas, recorriendo las claves foráneas de la base. Incluye lo que esas cuentas crearon durante la presentación. Nunca toca otras cuentas.
+  - **Correo.** `enviarCorreo` no envía por Resend a una dirección `@demo.petsuite.space`: el mensaje queda solo en la bandeja.
+- Motivo: el usuario pidió una forma de poner datos de prueba para hacer la demostración en la aplicación real, que no tiene cuentas demo.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores.
+  - `demo-presentacion.test.mjs` (nuevo), sobre PGlite con un administrador y una ficha «reales»:
+    - la simulación no escribe;
+    - las cuentas entran con la clave y la demo aparece en Explorar;
+    - no hay administrador ni asesor;
+    - no se envía correo por Resend a una cuenta de demostración;
+    - una carga repetida se rechaza;
+    - quitar borra todo lo cargado y lo creado durante la demo, deja intactos el administrador y la ficha reales, y es idempotente.
+  - Simulación contra la base real (sin escribir): 10 cuentas, 4 negocios, 2 ONG, 6 animales, 162 canjes y 1.749 eventos.
