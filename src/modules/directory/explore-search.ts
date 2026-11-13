@@ -18,7 +18,7 @@ export const CATEGORIAS: Categoria[] = [
 // Sello de confianza: dice exactamente qué revisó PetSuite y qué no garantiza.
 export const SELLO = {
   nombre: 'Validado por PetSuite',
-  detalle: 'Un asesor de PetSuite revisó los datos de registro del negocio (nombre, RUT y rubro) antes de publicarlo. El sello no evalúa la calidad de sus servicios.',
+  detalle: 'Un asesor de PetSuite revisó los datos de registro del negocio (nombre, RUT y rubro), su patente comercial, su resolución sanitaria y, si es una empresa, su constitución, antes de publicarlo. El sello no evalúa la calidad de sus servicios.',
 }
 
 export const normalizar = (texto: string) => texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLocaleLowerCase('es').replace(/[^a-z0-9]+/g, ' ').trim()
@@ -65,6 +65,23 @@ export function puntaje(p: PymeResumen, consulta: string): number {
     total += puntos
   }
   return total
+}
+
+/**
+ * Por qué aparece un negocio cuando la búsqueda no está en su nombre ni en su rubro: el servicio, y la sucursal si
+ * es de una, donde está la palabra. Así «cortes» explica que una clínica aparece por su «Peluquería clínica».
+ */
+export function coincidencia(p: PymeResumen, consulta: string): string | null {
+  const t = terminos(consulta)
+  const titulo = normalizar(`${p.nombre_comercial} ${rubroLabel[p.rubro] ?? p.rubro}`)
+  const pendientes = t.filter(grupo => !grupo.some(s => titulo.includes(s)))
+  if (!pendientes.length) return null
+  const fuentes = [
+    ...(p.servicios ?? []).map(texto => ({ texto, donde: '' })),
+    ...(p.sucursales ?? []).flatMap(s => s.servicios.filter(x => !(p.servicios ?? []).includes(x)).map(texto => ({ texto, donde: s.nombre }))),
+  ]
+  const f = fuentes.find(x => pendientes.some(grupo => grupo.some(s => normalizar(x.texto).includes(s))))
+  return f ? (f.donde ? `${f.texto} (${f.donde})` : f.texto) : null
 }
 
 export type Filtros = { q: string; comuna: string; rubro: string; ofertas: boolean }

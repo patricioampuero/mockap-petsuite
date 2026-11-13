@@ -101,6 +101,18 @@ Con proveedor configurado, la bandeja de correos que ven el asesor y el administ
 
 Con un dominio propio, fija `APP_URL` con ese dominio y redirige `<proyecto>.vercel.app` hacia él en **Settings → Domains**. El API acepta solicitudes desde `APP_URL`, el dominio de producción del proyecto y la vista previa en curso. Si hace falta otro origen, agrégalo en `PETSUITE_CORS_ORIGINS`.
 
+### Pagos con Mercado Pago
+
+Los planes se pagan con Mercado Pago (Checkout Pro) cuando el API tiene `MP_ACCESS_TOKEN`. Sin esa variable, la app solo ofrece transferencia.
+
+1. Crea una cuenta en Mercado Pago y entra a [Mercado Pago Developers](https://www.mercadopago.cl/developers/panel/app) → **Tus integraciones → Crear aplicación** (producto: Checkout Pro).
+2. En la aplicación, copia el **Access Token de prueba** (`TEST-…`) desde **Credenciales de prueba**.
+3. En Vercel agrega `MP_ACCESS_TOKEN` solo para **Production** y publica de nuevo (las variables llegan solo a despliegues nuevos).
+4. Prueba con un **usuario comprador de prueba** y las **tarjetas de prueba** de Mercado Pago (Developers → Cuentas de prueba). Con un token `TEST-` el API abre el checkout de prueba (`sandbox_init_point`).
+5. Para cobrar de verdad, cambia `MP_ACCESS_TOKEN` por el Access Token de producción.
+
+Cómo funciona: el API crea una preferencia con el monto del plan en pesos y `external_reference` = id del pago en PetSuite. La preferencia vence en 3 días. Mercado Pago devuelve a la Pyme a `APP_URL?pago=mercadopago` y avisa a `APP_URL/api/v1/pagos/mercadopago/webhook` (solo si `APP_URL` es https). En los dos casos el API vuelve a consultar el pago a Mercado Pago con su token, y solo activa el plan si está aprobado, por el monto exacto y en CLP. Así, un aviso falso no puede activar nada. El asesor no confirma estos pagos a mano. Un pago sin completar se reemplaza si la Pyme pide otro plan o medio, salvo que ya se haya pagado: en ese caso se confirma.
+
 ### Avisos, límites y monitoreo
 
 - **Aviso al tutor.** Cada mensaje enviado desde la ficha pública de un QR le llega al tutor por correo, con el mensaje, el contacto y la ubicación que dejó quien escribió. La copia de la bandeja omite esos datos. Si el correo falla, el mensaje igual queda guardado y el tutor lo ve en la ficha.

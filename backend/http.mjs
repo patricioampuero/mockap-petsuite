@@ -3,6 +3,9 @@
 import { createHash } from 'node:crypto'
 
 const MAX_BODY = 1_048_576
+// Los documentos de validación de un negocio (hasta 2 MB, en base64) necesitan un cuerpo más grande.
+const MAX_BODY_DOCUMENTO = 3_000_000
+const RUTA_DOCUMENTO = /^\/api\/v1\/pymes\/[^/]+\/documentos\/[a-z_]+$/
 
 /**
  * Quién llama, para los límites de solicitudes: la huella de su IP, nunca la IP. En Vercel la IP real llega en
@@ -43,10 +46,10 @@ export function crearAtencion({ handle, ApiError, origins }) {
       let body
       if (req.method !== 'GET') {
         let bytes = 0
-        const chunks = []
+        const chunks = [], max = RUTA_DOCUMENTO.test(url.pathname) ? MAX_BODY_DOCUMENTO : MAX_BODY
         for await (const chunk of req) {
           bytes += chunk.length
-          if (bytes > MAX_BODY) { respond(res, 413, { message: 'Solicitud demasiado grande' }); return }
+          if (bytes > max) { respond(res, 413, { message: 'Solicitud demasiado grande' }); return }
           chunks.push(chunk)
         }
         if (bytes) {
@@ -61,9 +64,12 @@ export function crearAtencion({ handle, ApiError, origins }) {
       const result = await handle(req.method || 'GET', path, body, session, clienteDe(req))
       if (result === undefined) { res.writeHead(204, { 'Cache-Control': 'no-store' }); res.end() }
       else if (result?.__binario) {
-        // Fotos: el archivo tal cual, con caché larga (su dirección no cambia nunca: una foto nueva tiene otro id).
         const datos = Buffer.from(result.base64, 'base64')
-        res.writeHead(200, { 'Content-Type': result.tipo, 'Content-Length': datos.length, 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' })
+        // Documentos privados: sin caché y siempre como descarga. Fotos: caché larga (una foto nueva tiene otro id).
+        const cabeceras = result.privado
+          ? { 'Cache-Control': 'private, no-store', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(result.nombre || 'documento')}` }
+          : { 'Cache-Control': 'public, max-age=31536000, immutable' }
+        res.writeHead(200, { 'Content-Type': result.tipo, 'Content-Length': datos.length, 'X-Content-Type-Options': 'nosniff', ...cabeceras })
         res.end(datos)
       }
       else respond(res, 200, result)

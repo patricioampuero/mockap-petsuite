@@ -7,7 +7,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../shared/feedback'
 import { FICHA_PUBLICA } from '../../shared/fichas'
 import { PublicFooter, PublicHeader } from '../landing/public-layout'
 import { isOpenNow, statusForBusiness, statusForSchedule } from './directory-hours'
-import { CATEGORIAS, SELLO, buscar, filtrosDesdeHash, hashExplorar, nivelPin, normalizar, patrocinados, rubroLabel, type Categoria, type Filtros } from './explore-search'
+import { CATEGORIAS, SELLO, buscar, coincidencia, filtrosDesdeHash, hashExplorar, nivelPin, normalizar, patrocinados, rubroLabel, type Categoria, type Filtros } from './explore-search'
 
 export const categoriaIcono: Record<string, typeof Search> = { veterinaria: Stethoscope, peluqueria: Scissors, tienda: ShoppingBag, vacunas: Syringe, ofertas: Tag }
 
@@ -83,7 +83,8 @@ export function ExploreMap({ places, now, activeId = null, onSelect, numbered = 
   return <div ref={box} className="leaflet-box explore-map-box" role="region" aria-label={label} />
 }
 
-function ExploreCard({ p, n, now, patrocinado = false, onHover }: { p: PymeResumen; n?: number; now: Date; patrocinado?: boolean; onHover: (id: string | null) => void }) {
+function ExploreCard({ p, n, now, q = '', patrocinado = false, onHover }: { p: PymeResumen; n?: number; now: Date; q?: string; patrocinado?: boolean; onHover: (id: string | null) => void }) {
+  const motivo = q.trim() ? coincidencia(p, q) : null
   const status = statusForBusiness(p, now)
   const sucursales = p.sucursales?.length ?? 0
   return <a className={`explore-card tier-${nivelPin(p)}${p.sin_reclamar ? ' is-unclaimed' : ''}`} href={`#local/${p.id}`} onMouseEnter={() => onHover(p.id)} onMouseLeave={() => onHover(null)} onFocus={() => onHover(p.id)} onBlur={() => onHover(null)}>
@@ -97,6 +98,7 @@ function ExploreCard({ p, n, now, patrocinado = false, onHover }: { p: PymeResum
         : <span className="explore-valid" title={SELLO.nombre}><ShieldCheck size={16} aria-hidden="true" /><span className="sr-only">{SELLO.nombre}</span></span>}</div>
       <span className="explore-card-meta">{rubroLabel[p.rubro] || p.rubro} · {p.comuna}{sucursales ? ` · +${sucursales} ${sucursales === 1 ? 'sucursal' : 'sucursales'}` : ''}</span>
       {!!p.servicios?.length && <span className="explore-card-services">{p.servicios.slice(0, 3).join(' · ')}</span>}
+      {motivo && <span className="explore-match">Coincide con «{motivo}»</span>}
       <span className={`explore-card-status${status.open ? ' is-open' : status.known ? ' is-closed' : ''}`}><Clock3 size={14} aria-hidden="true" /> {status.text}</span>
       {(!!p.ofertas || !!p.cupones?.length) && <span className="explore-card-tags">{!!p.ofertas && <span className="chip chip-warn"><Tag size={12} aria-hidden="true" /> {p.ofertas === 1 ? '1 oferta' : `${p.ofertas} ofertas`}</span>}{!!p.cupones?.length && <span className="chip chip-info">Cupón ONG</span>}</span>}
     </div>
@@ -161,8 +163,8 @@ export function ExplorePage({ hash }: { hash: string }) {
         <section className="explore-results" aria-label="Resultados">
           <div className="explore-summary"><strong role="status">{pymes ? resumen : 'Buscando negocios...'}</strong><span>Ordenados por coincidencia con tu búsqueda. El plan del negocio no cambia este orden; los patrocinados se muestran aparte.</span></div>
           {!pymes && <LoadingState label="Cargando negocios" rows={3} />}
-          {!!destacados.length && <div className="explore-sponsored"><p className="explore-sponsored-label">Patrocinado</p><div className="explore-grid">{destacados.map(p => <ExploreCard key={p.id} p={p} now={now} patrocinado onHover={setActivo} />)}</div></div>}
-          {pymes && resultados.length > 0 && <div className="explore-grid">{resultados.map((p, i) => <ExploreCard key={p.id} p={p} n={i + 1} now={now} onHover={setActivo} />)}</div>}
+          {!!destacados.length && <div className="explore-sponsored"><p className="explore-sponsored-label">Patrocinado</p><div className="explore-grid">{destacados.map(p => <ExploreCard key={p.id} p={p} now={now} q={f.q} patrocinado onHover={setActivo} />)}</div></div>}
+          {pymes && resultados.length > 0 && <div className="explore-grid">{resultados.map((p, i) => <ExploreCard key={p.id} p={p} n={i + 1} now={now} q={f.q} onHover={setActivo} />)}</div>}
           {pymes && !resultados.length && <EmptyState title="Sin resultados" description="Prueba con otra palabra, otra comuna o quita los filtros." action="Quitar filtros" onAction={limpiar} />}
         </section>
         <aside className="explore-map" aria-label="Mapa">

@@ -18,6 +18,8 @@ import './equipo'
 import './promocion'
 import './asesoria'
 import './privacidad'
+import './documentos'
+import './mercadopago'
 
 function match(pattern: string, path: string): Record<string, string> | null {
   const a = pattern.split('/'), b = path.split('/')

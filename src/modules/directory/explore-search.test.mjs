@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buscar, filtrosDesdeHash, hashExplorar, normalizar, patrocinados } from './explore-search.ts'
+import { buscar, coincidencia, filtrosDesdeHash, hashExplorar, normalizar, patrocinados } from './explore-search.ts'
 
 const negocio = (id, nombre, rubro, servicios, extra = {}) => ({ id, nombre_comercial: nombre, rubro, descripcion: null, comuna: 'Osorno', direccion: null, latitud: null, longitud: null, telefono: null, whatsapp: null, horario: {}, servicios, destacado: 0, sucursales: [], cupones: [], ...extra })
 const pymes = [
@@ -40,4 +40,13 @@ test('la búsqueda se puede compartir en la dirección', () => {
   assert.match(hash, /^#explorar\?/)
   assert.deepEqual(filtrosDesdeHash(hash), { q: 'baño perro', comuna: 'Puerto Montt', rubro: '', ofertas: true })
   assert.equal(hashExplorar({}), '#explorar')
+})
+
+test('explica con qué servicio coincide un negocio que no lo dice en su nombre', () => {
+  const clinica = negocio('vet2', 'Clínica Veterinaria Sur', 'veterinaria', ['Consulta general'], { sucursales: [{ id: 's2', nombre: 'Sucursal Rahue', comuna: 'Osorno', direccion: null, latitud: null, longitud: null, telefono: null, whatsapp: null, horario: {}, descripcion: null, servicios: ['Consulta general', 'Peluquería clínica'] }] })
+  assert.deepEqual(ids(buscar([clinica], { ...todo, q: 'cortes' })), ['vet2'], '«corte» es sinónimo de peluquería')
+  assert.equal(coincidencia(clinica, 'cortes'), 'Peluquería clínica (Sucursal Rahue)')
+  assert.equal(coincidencia(pymes[2], 'corte de uñas'), 'Corte de uñas')
+  assert.equal(coincidencia(pymes[2], 'peluqueria'), null, 'si está en el nombre o el rubro no hace falta explicarlo')
+  assert.equal(coincidencia(pymes[0], ''), null)
 })

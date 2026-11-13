@@ -82,6 +82,9 @@ function cliente(handle) {
 // Corre el guion contra ambos backends con los mismos datos y compara paso a paso.
 // Fotos de prueba: un JPEG mínimo sin metadatos y el mismo con un bloque EXIF (datos de cámara o ubicación).
 const JPEG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA='
+// Documentos de prueba: un PDF y un PNG mínimos.
+const PDF = Buffer.from('%PDF-1.4\n1 0 obj <<>> endobj\ntrailer <<>>\n%%EOF\n').toString('base64')
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('datos de prueba')]).toString('base64')
 const JPEG_EXIF = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x10]), Buffer.from('Exif\0\0'), Buffer.alloc(8), Buffer.from(JPEG, 'base64').subarray(2)]).toString('base64')
 
 // Ficha con información pública: la demo no trae ninguna (solo existen en la versión real), así que la prueba
@@ -121,6 +124,9 @@ async function paridad(guion) {
 }
 
 const idDe = (lista, campo, valor) => lista.find(x => x[campo] === valor).id
+// La franja horaria y la hora de más visitas dependen de la hora en que corre cada backend (los eventos de la prueba
+// llevan la hora actual): se comparan aparte, en kpis.test.mjs, con horas fijas.
+const sinHoras = ({ por_franja, hora_peak, ...m }) => ({ ...m, por_franja: por_franja.length, hora_peak: hora_peak === null })
 
 // ---------- Guiones ----------
 test('cuentas: login, registro, sesión y catálogos', async () => {
@@ -389,7 +395,7 @@ test('directorio y Pymes: perfil, consultas, catálogo, métricas, suscripción,
     await call('DELETE', `/pymes/${shop}/catalogo/${cama.id}`, undefined, 'tienda')
     await call('GET', `/pymes/${shop}/catalogo`, undefined, 'jefe')
 
-    for (const [id, quien] of [[shop, 'tienda'], [vet, 'veterinaria'], [pelu, 'peluqueria']]) await call('GET', `/pymes/${id}/metricas`, undefined, quien)
+    for (const [id, quien] of [[shop, 'tienda'], [vet, 'veterinaria'], [pelu, 'peluqueria']]) await call('GET', `/pymes/${id}/metricas`, undefined, quien, { comparar: sinHoras })
 
     // Suscripción: renovación por transferencia y pago por Orcob con su aviso.
     await call('GET', `/pymes/${shop}/suscripcion`, undefined, 'tienda')
@@ -403,6 +409,14 @@ test('directorio y Pymes: perfil, consultas, catálogo, métricas, suscripción,
     await call('POST', `/pymes/${pelu}/pagos/${cobro.pago_id}/orcob-confirmado`, undefined, 'peluqueria')
     await call('POST', `/pymes/${pelu}/pagos/${cobro.pago_id}/orcob-confirmado`, undefined, 'peluqueria')
     await call('GET', `/pymes/${pelu}/suscripcion`, undefined, 'peluqueria')
+    // Mercado Pago sin MP_ACCESS_TOKEN (y en la demo): no se ofrece y sus rutas responden igual en ambos backends.
+    // El flujo con Mercado Pago se prueba contra un Mercado Pago simulado en mercadopago.test.mjs.
+    await call('GET', '/pagos/medios')
+    await call('POST', `/pymes/${shop}/suscripcion`, { plan_id: 3, canal: 'mercadopago' }, 'tienda')
+    await call('POST', `/pymes/${pelu}/pagos/${cobro.pago_id}/mercadopago`, undefined, 'peluqueria')
+    await call('POST', `/pymes/${pelu}/pagos/${cobro.pago_id}/mercadopago`, undefined, 'tutor')
+    await call('POST', `/pymes/${pelu}/pagos/${cobro.pago_id}/mercadopago/verificar`, undefined, 'peluqueria')
+    await call('POST', '/pagos/mercadopago/webhook?data.id=123&type=payment', { type: 'payment', data: { id: '123' } })
     await call('GET', '/pymes/mias', undefined, 'peluqueria')
     await call('GET', '/pymes/mias', undefined, 'tienda')
 
@@ -413,12 +427,44 @@ test('directorio y Pymes: perfil, consultas, catálogo, métricas, suscripción,
     await call('POST', '/pymes', { ...alta, rut_empresa: '123' }, 'nueva')
     await call('POST', '/pymes', { ...alta, comuna_id: 99 }, 'nueva')
     await call('POST', '/pymes', { ...alta, plan_id: 9 }, 'nueva')
+    await call('POST', '/pymes', { ...alta, plan_id: 3, canal_pago: 'mercadopago' }, 'nueva')
     await call('POST', '/pymes', { ...alta, rut_empresa: '76333444-5' }, 'nueva')
     const { data: gateria } = await call('POST', '/pymes', { ...alta, plan_id: 3, canal_pago: 'orcob' }, 'nueva')
     await call('POST', '/pymes', alta, 'tutor')
     await call('GET', '/pymes/mias', undefined, 'nueva')
     await call('POST', `/pymes/${gateria.id}/catalogo`, { tipo: 'producto', nombre: 'Rascador', precio_referencial_clp: 20000 }, 'nueva')
     await call('POST', `/pymes/${gateria.id}/suscripcion`, { plan_id: 3, canal: 'orcob' }, 'nueva')
+
+    // Documentos de validación: sin ellos el alta no se aprueba. El RUT 76.999.888 es de empresa, así que también
+    // se pide la constitución. El asesor descarga, aprueba o pide corregir; el archivo nunca es público.
+    await call('GET', `/pymes/${gateria.id}/documentos`, undefined, 'nueva')
+    await call('PATCH', `/admin/pymes/${gateria.id}/verificacion`, { decision: 'aprobar' }, 'asesor')
+    const doc = (tipo, nombre, mime, datos, quien = 'nueva') => call('PUT', `/pymes/${gateria.id}/documentos/${tipo}`, { nombre, mime, datos }, quien)
+    await doc('patente_comercial', 'patente.pdf', 'application/pdf', PDF, 'tutor')
+    await doc('patente_comercial', 'patente.pdf', 'application/pdf', PDF, 'tienda')
+    await doc('otro', 'patente.pdf', 'application/pdf', PDF)
+    await doc('patente_comercial', 'patente.pdf', 'application/pdf', JPEG)
+    await doc('patente_comercial', 'patente.txt', 'text/plain', PDF)
+    await doc('patente_comercial', 'patente.pdf', 'application/pdf', 'no es base64 !')
+    await doc('patente_comercial', 'documentos/patente 2026.pdf', 'application/pdf', PDF)
+    await doc('resolucion_sanitaria', 'resolucion.jpg', 'image/jpeg', JPEG)
+    const { data: docs } = await call('GET', `/admin/pymes/${gateria.id}/documentos`, undefined, 'asesor')
+    await call('GET', `/admin/pymes/${gateria.id}/documentos`, undefined, 'tutor')
+    await call('GET', '/admin/pymes/no-existe/documentos', undefined, 'asesor')
+    await call('PATCH', `/admin/pymes/${gateria.id}/verificacion`, { decision: 'aprobar' }, 'asesor')
+    const patente = docs.documentos.find(d => d.tipo === 'patente_comercial').archivo.id
+    await call('GET', `/admin/documentos/${patente}/archivo`, undefined, 'asesor')
+    await call('GET', `/admin/documentos/${patente}/archivo`, undefined, 'nueva')
+    await call('GET', '/admin/documentos/no-existe/archivo', undefined, 'asesor')
+    await call('GET', `/pymes/${gateria.id}/documentos/${patente}/archivo`, undefined, 'nueva')
+    await call('GET', `/pymes/${shop}/documentos/${patente}/archivo`, undefined, 'tienda')
+    await call('PATCH', `/admin/documentos/${patente}`, { decision: 'rechazar', motivo: 'corta' }, 'asesor')
+    await call('PATCH', `/admin/documentos/${patente}`, { decision: 'rechazar', motivo: 'La patente está vencida: sube la del año 2026.' }, 'asesor')
+    await call('PATCH', '/admin/documentos/no-existe', { decision: 'aprobar' }, 'asesor')
+    await doc('constitucion_sociedad', 'constitucion.png', 'image/png', PNG)
+    await call('PATCH', `/admin/pymes/${gateria.id}/verificacion`, { decision: 'aprobar' }, 'asesor')
+    await doc('patente_comercial', 'patente-2026.pdf', 'application/pdf', PDF)
+    await call('GET', '/pymes/mias', undefined, 'nueva')
     await call('GET', '/admin/pymes', undefined, 'asesor')
     await call('GET', '/admin/pymes', undefined, 'tutor')
     await call('PATCH', `/admin/pymes/${gateria.id}/verificacion`, { decision: 'aprobar' }, 'asesor')
@@ -568,6 +614,18 @@ test('adopción y ONG: catálogo, solicitudes, traspaso de la ficha, registro, p
     await call('GET', '/ong/animales', undefined, 'ong')
     assert.ok(animales.length)
 
+    // Prioritario: uno por ONG (marcar a otro le quita la prioridad al anterior), solo disponibles, y adoptar lo quita.
+    await call('PUT', `/ong/animales/${canela}/prioridad`, { prioritario: true }, 'ong')
+    await call('PUT', `/ong/animales/${tomas}/prioridad`, { prioritario: true }, 'ong')
+    await call('GET', '/adopciones')
+    await call('PUT', `/ong/animales/${nuevo.id}/prioridad`, { prioritario: true }, 'ong')
+    await call('PUT', `/ong/animales/${tomas}/prioridad`, { prioritario: true }, 'ong2')
+    await call('PUT', `/ong/animales/${tomas}/prioridad`, { prioritario: 'si' }, 'ong')
+    await call('PUT', `/ong/animales/${tomas}/prioridad`, { prioritario: true }, 'tutor')
+    await call('PUT', `/ong/animales/${tomas}/prioridad`, { prioritario: false }, 'ong')
+    await call('PUT', `/ong/animales/${canela}/prioridad`, { prioritario: true }, 'ong')
+    await call('GET', '/ong/animales', undefined, 'ong')
+
     // Adopción con traspaso de la ficha al tutor registrado.
     await call('POST', `/ong/animales/${canela}/adopcion`, { solicitud_id: 'otra' }, 'ong')
     await call('POST', `/ong/animales/${canela}/adopcion`, { solicitud_id: solicitudes[0].id }, 'ong')
@@ -715,7 +773,7 @@ test('suite: sucursales, equipo, publicidad, convenios y canjes, cobranza, cuent
     await call('GET', `/pymes/${vet}/convenios`, undefined, 'veterinaria')
     await call('POST', `/pymes/${vet}/convenios/${nuevoConvenio.id}/finalizar`, undefined, 'veterinaria')
     await call('POST', `/pymes/${vet}/convenios/${nuevoConvenio.id}/finalizar`, undefined, 'veterinaria')
-    await call('GET', `/pymes/${vet}/metricas`, undefined, 'veterinaria')
+    await call('GET', `/pymes/${vet}/metricas`, undefined, 'veterinaria', { comparar: sinHoras })
     await call('GET', `/ongs/${patitas}`)
     await call('GET', '/ongs')
     await call('GET', `/pymes/${vet}`)

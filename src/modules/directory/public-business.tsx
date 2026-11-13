@@ -45,6 +45,7 @@ export function PublicBusiness({ id }: { id: string }) {
               : <details className="local-seal"><summary><ShieldCheck size={16} aria-hidden="true" /> {SELLO.nombre}</summary><p>{SELLO.detalle}</p></details>}
             <span className={`local-open${status.open ? ' is-open' : status.known ? ' is-closed' : ''}`}><Clock3 size={15} aria-hidden="true" /> {status.text}</span>
             {pyme.direccion && <span className="local-address"><MapPin size={15} aria-hidden="true" /> {pyme.direccion}</span>}
+            {pyme.telefono && <a className="local-address local-phone" href={`tel:${pyme.telefono.replace(/[^\d+]/g, '')}`} onClick={() => trackEvento(id, 'clic_contacto')}><Phone size={15} aria-hidden="true" /> {pyme.telefono}</a>}
           </div>
         </div>
         <ShareButton hash={`#local/${id}`} title={pyme.nombre_comercial} text={`${pyme.nombre_comercial} en PetSuite: servicios, horario y cómo llegar.`} />
@@ -68,7 +69,7 @@ export function PublicBusiness({ id }: { id: string }) {
             {horario.length ? <dl className="local-hours">{horario.map(([dia, h]) => <div key={dia}><dt>{diaLabel[dia] || dia}</dt><dd>{h}</dd></div>)}</dl> : <p className="muted">Horario no informado.</p>}
             <div className="local-card-actions">
               {comoLlegar && <a className="primary" href={comoLlegar} target="_blank" rel="noopener noreferrer"><Navigation size={17} aria-hidden="true" /> Cómo llegar</a>}
-              {pyme.telefono && <a className="secondary" href={`tel:${pyme.telefono}`} onClick={() => trackEvento(id, 'clic_contacto')}><Phone size={17} aria-hidden="true" /> Llamar</a>}
+              {pyme.telefono && <a className="secondary" href={`tel:${pyme.telefono.replace(/[^\d+]/g, '')}`} onClick={() => trackEvento(id, 'clic_contacto')}><Phone size={17} aria-hidden="true" /> Llamar al {pyme.telefono}</a>}
               {wa && <a className="secondary" href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" onClick={() => trackEvento(id, 'clic_whatsapp')}><MessageCircle size={17} aria-hidden="true" /> WhatsApp</a>}
             </div>
           </div>

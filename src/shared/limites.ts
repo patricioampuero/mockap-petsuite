@@ -37,6 +37,8 @@ export function limitesDe(method: string, path: string, body: unknown, cliente: 
   if (path === '/auth/registro' || path === '/auth/reenviar-verificacion' || path === '/auth/recuperar') {
     return { reglas: [{ clave: `correos:${cliente}`, max: 10, segundos: 3600 }], cuenta: 'exito' }
   }
+  // Avisos de Mercado Pago: públicos, así que se limitan (300 por cliente cada hora; Mercado Pago reintenta si recibe 429).
+  if (path === '/pagos/mercadopago/webhook') return { reglas: [{ clave: `mp:${cliente}`, max: 300, segundos: 3600 }], cuenta: 'exito' }
   // Fotos: 30 por cliente cada hora (además del máximo de fotos por cuenta).
   if (path === '/imagenes') return { reglas: [{ clave: `imagenes:${cliente}`, max: 30, segundos: 3600 }], cuenta: 'exito' }
   const qr = /^\/qr\/([^/]+)\/mensajes$/.exec(path)

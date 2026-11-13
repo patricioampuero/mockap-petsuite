@@ -805,3 +805,45 @@ body:has(.public-site) { min-width: 0; }
 .pet-photo-change.is-busy { cursor: progress; opacity: 0.75; }
 .pet-photo-remove { font-size: 0.78rem; }
 .pet-photo-editor .form-error { max-width: 220px; margin: 0; font-size: 0.8rem; text-align: center; }
+
+/* Documentos de validación del negocio y su revisión por el asesor */
+.document-list { display: grid; gap: 12px; }
+.document-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 18px; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-bg-surface-adjusted); box-shadow: var(--shadow-card); }
+.document-main { display: grid; gap: 6px; min-width: 0; }
+.document-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.document-head h2 { margin: 0; font-size: 1.05rem; }
+.document-main p { margin: 0; }
+.document-file { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.document-file .text-button { display: inline-flex; align-items: center; gap: 6px; padding: 0; overflow-wrap: anywhere; text-align: left; }
+.document-file small { color: var(--color-text-muted); }
+.document-reason { padding: 8px 12px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--color-warm) 12%, transparent); color: var(--color-text-primary); font-size: 0.9rem; }
+.document-upload { display: inline-flex; flex: none; align-items: center; gap: 8px; cursor: pointer; white-space: nowrap; }
+.document-upload:focus-within { outline: 2px solid var(--color-accent-solid); outline-offset: 2px; }
+.document-upload.is-busy { cursor: progress; opacity: 0.75; }
+.document-help { margin-top: 12px; font-size: 0.85rem; }
+.admin-documents { display: grid; gap: 8px; margin-top: 10px; padding: 12px; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-bg-subtle); }
+.admin-documents > p { margin: 0; font-size: 0.85rem; }
+.admin-document { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 0; border-top: 1px solid var(--color-border-subtle); }
+.admin-document > div:first-child { display: grid; gap: 2px; min-width: 0; }
+.admin-document-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.admin-document-actions .text-button { display: inline-flex; align-items: center; gap: 4px; }
+.admin-document-reject { flex-basis: 100%; display: grid; gap: 6px; }
+.text-button.inline-link { display: inline; min-height: 0; padding: 0; font-size: inherit; }
+@media (max-width: 640px) {
+  .document-row { flex-direction: column; }
+  .document-upload { align-self: stretch; justify-content: center; }
+}
+
+/* KPI de negocio: impacto de campañas con ONG y encabezado de la fila de KPI del administrador */
+.campaign-list { display: grid; gap: 12px; }
+.campaign-impact { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--color-border-subtle); }
+.campaign-impact:last-child { padding-bottom: 0; border-bottom: 0; }
+.campaign-impact p { margin: 2px 0; }
+.campaign-impact small { color: var(--color-text-muted); }
+.kpi-heading { margin-top: 8px; }
+
+/* Teléfono visible en el perfil público del negocio y etiqueta del animal prioritario */
+.local-phone { color: var(--color-accent-strong); font-weight: 750; text-decoration: none; }
+.local-phone:hover { text-decoration: underline; }
+.priority-chip { display: inline-flex; align-items: center; gap: 4px; width: fit-content; }
+.explore-match { margin: 0; font-size: 0.82rem; color: var(--color-accent-strong); }

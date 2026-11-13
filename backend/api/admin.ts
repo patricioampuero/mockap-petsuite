@@ -2,6 +2,10 @@
 import { z } from 'zod'
 import { DIAS_PERIODO, PLANES, PLAN_GRATIS, planPorId } from '../../src/modules/plans/plans'
 import { FICHA_PUBLICA_SIN_DUENO } from '../../src/shared/fichas'
+import { documentosFaltantes } from '../../src/shared/documentos'
+import { PAGO_LO_CONFIRMA_MP } from '../../src/shared/pagos'
+import { kpisPlataforma } from '../../src/shared/kpis'
+import { aprobarDocumentos, documentosDe } from './documentos'
 import { userSuspensionSchema } from '../../src/shared/validators'
 import { auth, cerrarSesiones, correoDe, enviarCorreo, levantarVencidas } from './auth'
 import { comunasDe, dayOffset, fail, hace, idDe, now, on, parse, uid, una } from './core'
@@ -39,8 +43,20 @@ on('GET', '/admin/resumen', async req => {
     banners_pendientes: c!.banners_pendientes, convenios_pendientes: c!.convenios_pendientes, perfiles_pendientes: c!.perfiles_pendientes, privacidad_pendientes: c!.privacidad_pendientes,
     usuarios: c!.usuarios, suspendidos: c!.suspendidos, pymes_activas: c!.pymes_activas, pymes_pendientes: c!.pymes_pendientes, reportes_abiertos: c!.reportes_abiertos,
     escaneos: c!.escaneos, ingresos_30d: c!.ingresos_30d, ong_pendientes: c!.ong_pendientes, animales_disponibles: c!.animales_disponibles,
+    kpis: await kpisDeLaPlataforma(req.sql, desde),
   }
 })
+
+// KPI de negocio de toda la plataforma en los últimos 30 días (src/shared/kpis.ts). Los conteos se agrupan en la base.
+async function kpisDeLaPlataforma(sql: Sql, desde: string) {
+  const totales = { visita_perfil: 0, vista_item: 0, clic_contacto: 0, clic_whatsapp: 0 }
+  for (const r of await sql<{ tipo: keyof typeof totales; n: number }>('select tipo, count(*)::int as n from eventos_pyme where ocurrido_en > $1 group by tipo', [desde])) totales[r.tipo] = r.n
+  const visitas = await sql<{ nombre: string; n: number }>(`select p.nombre_comercial as nombre, count(*)::int as n from eventos_pyme e join pymes p on p.id = e.pyme_id
+    where e.tipo = 'visita_perfil' and e.ocurrido_en > $1 group by p.nombre_comercial`, [desde])
+  const canjes = await sql<{ nombre: string; n: number }>(`select o.nombre, count(*)::int as n from canjes k join convenios c on c.id = k.convenio_id join ongs o on o.id = c.ong_id
+    where k.ocurrido_en > $1 group by o.nombre`, [desde])
+  return kpisPlataforma(totales, new Map(visitas.map(r => [r.nombre, r.n])), new Map(canjes.map(r => [r.nombre, r.n])))
+}
 
 // Suspensión vigente con la forma del mock: { tipo, dias, hasta, motivo, mensaje, aplicada_en } o null.
 const SUSPENSION = `(select json_build_object('tipo', s.tipo, 'dias', s.dias, 'hasta', s.hasta, 'motivo', s.motivo, 'mensaje', s.mensaje, 'aplicada_en', s.aplicada_en)
@@ -141,37 +157,46 @@ on('GET', '/admin/pymes', async req => {
     const pend = pagos.find(pg => pg.pyme_id === p.id && pg.estado === 'pendiente')
     const pago = pend ?? (s && pagos.find(pg => pg.suscripcion_id === s.id))
     const sub = pago && lista.find(x => x.id === pago.suscripcion_id)
-    const uso = await usoPyme(req.sql, p.id)
+    const uso = await usoPyme(req.sql, p.id), docs = await documentosDe(req.sql, p)
     resultado.push({
       id: p.id, nombre_comercial: p.nombre_comercial, rut_empresa: p.rut_empresa, rubro: p.rubro, comuna: comunas.get(p.comuna_id) ?? '', estado_verificacion: p.estado_verificacion,
       solicitud: p.estado_verificacion === 'aprobada' && pend ? 'renovacion' : 'alta', plan: sub ? planPorId(sub.plan_id).nombre : PLAN_GRATIS.nombre,
       plan_vigente: estadoPlanDe(lista).plan.nombre, canal: pago?.canal ?? null, referencia: pago?.referencia ?? null, monto_clp: pago?.monto_clp ?? 0,
       sucursales: uso.sucursales, equipo: uso.usuarios,
+      documentos_subidos: docs.documentos.filter(x => x.archivo).length, documentos_faltan: docs.faltan,
     })
   }
   return resultado
 })
 
 on('PATCH', '/admin/pymes/:id/verificacion', async req => {
-  await auth(req, 'admin', 'asesor')
+  const revisor = await auth(req, 'admin', 'asesor')
   const d = parse(z.object({ decision: z.enum(['aprobar', 'rechazar', 'suspender']) }), req.body)
   const p = await una<Pyme>(req.sql, `select ${PYME} from pymes p where p.id = $1 for update`, [idDe(req.params.id)])
   if (!p) return fail(404, 'Pyme no encontrada')
   if (p.origen === 'publica') return fail(422, FICHA_PUBLICA_SIN_DUENO)
+  // Un alta se aprueba solo con sus documentos obligatorios subidos y sin rechazos pendientes de corregir.
+  const faltan = (await documentosDe(req.sql, p)).faltan
+  if (d.decision === 'aprobar' && p.estado_verificacion === 'pendiente' && faltan.length) return fail(422, documentosFaltantes(faltan))
   const subs = (await suscripcionesDe(req.sql, [p.id])).get(p.id)!
   const pendientes = subs.filter(s => s.estado === 'pendiente')
+  // Un periodo que espera un pago de Mercado Pago no lo activa el asesor: se activa cuando Mercado Pago informa el pago.
+  const conMp = new Set((await req.sql<{ suscripcion_id: string }>("select pg.suscripcion_id from pagos pg join suscripciones s on s.id = pg.suscripcion_id where s.pyme_id = $1 and pg.estado = 'pendiente' and pg.canal = 'mercadopago'", [p.id])).map(x => x.suscripcion_id))
+  const manuales = pendientes.filter(s => !conMp.has(s.id))
   const renovacion = p.estado_verificacion === 'aprobada' && pendientes.length > 0 && d.decision !== 'suspender'
+  if (d.decision === 'aprobar' && renovacion && !manuales.length) return fail(409, PAGO_LO_CONFIRMA_MP)
   const guardar = (s: Suscripcion) => req.sql('update suscripciones set inicio = $2, fin = $3, estado = $4 where id = $1', [s.id, s.inicio, s.fin, s.estado])
 
   if (d.decision === 'aprobar') {
     // Renovación: el periodo pedido se respeta. Alta o reactivación: parte hoy.
-    const activar = pendientes.length ? pendientes : subs.slice(-1)
+    const activar = manuales.length ? manuales : pendientes.length ? [] : subs.slice(-1)
     for (const s of activar) {
       if (!renovacion || s.inicio < dayOffset(0)) Object.assign(s, { inicio: dayOffset(0), fin: dayOffset(DIAS_PERIODO) })
       s.estado = 'activa'
       await guardar(s)
     }
-    await req.sql("update pagos pg set estado = 'confirmado', pagado_en = $2 from suscripciones s where s.id = pg.suscripcion_id and s.pyme_id = $1 and pg.estado = 'pendiente'", [p.id, now()])
+    await req.sql("update pagos pg set estado = 'confirmado', pagado_en = $2 from suscripciones s where s.id = pg.suscripcion_id and s.pyme_id = $1 and pg.estado = 'pendiente' and pg.canal <> 'mercadopago'", [p.id, now()])
+    if (p.estado_verificacion === 'pendiente') await aprobarDocumentos(req.sql, p, revisor)
     p.estado_verificacion = 'aprobada'
   } else {
     for (const s of renovacion ? pendientes : subs) { s.estado = 'cancelada'; await guardar(s) }

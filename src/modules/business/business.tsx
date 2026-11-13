@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import { AlertCircle, BadgeCheck, Crown, Eye, MousePointerClick, Package, Pencil, ShoppingBag, Tag, Ticket, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AlertCircle, BadgeCheck, Crown, Eye, FileUp, MousePointerClick, Package, Pencil, ShoppingBag, Tag, Ticket, X } from 'lucide-react'
+import { BusinessDocuments } from './business-documents'
+import type { Franja, ImpactoCampana } from '../../shared/kpis'
 import { api, clp, errorText, fechaCorta, fechaLarga, hoy, modoDemo, ofertaVigente, type Comuna, type ItemCatalogo } from '../../shared/api'
 import { instruccionesTransferencia } from '../../shared/pagos'
 import { BusinessProfile } from './business-profile'
@@ -18,16 +20,24 @@ import { ProfileCover } from '../../shared/profile-cover'
 
 export type MiPyme = {
   id: string; nombre_comercial: string; rubro: string; estado_verificacion: 'pendiente' | 'aprobada' | 'rechazada' | 'suspendida'; comuna_id: number; solicitud_pendiente?: boolean
+  /** Documentos de validación obligatorios que faltan o que el asesor pidió corregir. */
+  documentos_faltan?: string[]
   rol_interno: 'dueno' | 'jefe_local' | 'clinico'; sucursal: { id: string; nombre: string } | null; permisos: ModuloPyme[]
   plan: Plan; en_gracia: boolean; dias_mora: number; uso: Record<keyof Limites, number>
   suscripcion: { estado: string; fin: string; plan: string; plan_id: number; precio: number; max_items: number | null } | null
 }
 type Totales = Record<'visita_perfil' | 'vista_item' | 'clic_contacto' | 'clic_whatsapp', number>
-type Metricas = { nivel: Plan['beneficios']['metricas']; totales: Totales; anteriores: Totales; ofertas_vigentes: number; por_dia: { dia: string; eventos: number }[]; items_mas_vistos: { nombre: string; vistas: number }[]; canjes_30d: number; por_sucursal: { nombre: string; canjes: number }[] }
+type Metricas = {
+  nivel: Plan['beneficios']['metricas']; totales: Totales; anteriores: Totales; ofertas_vigentes: number; por_dia: { dia: string; eventos: number }[]; items_mas_vistos: { nombre: string; vistas: number }[]; canjes_30d: number; por_sucursal: { nombre: string; canjes: number }[]
+  // KPI de negocio (src/shared/kpis.ts)
+  tasa_contacto?: number | null; por_franja?: Franja[]; hora_peak?: number | null
+  cupones?: { codigo: string; titulo: string; ong: string; activo: boolean; canjes_30d: number }[]
+  campanas?: ({ titulo: string; ong: string; codigo: string; desde: string; canjes: number } & ImpactoCampana)[]
+}
 
 const estadoTexto: Record<MiPyme['estado_verificacion'], string> = { pendiente: 'En verificación', aprobada: 'Verificada', rechazada: 'Rechazada', suspendida: 'Suspendida' }
 // Vista del menú → módulo que exige. Las vistas sin módulo (Inicio) las ve todo el equipo.
-const vistaModulo: Record<string, ModuloPyme> = { 'business-profile': 'perfil', branches: 'sucursales', catalog: 'catalogo', contacts: 'contactos', team: 'equipo', ads: 'publicidad', agreements: 'convenios', metrics: 'metricas', subscription: 'suscripcion' }
+const vistaModulo: Record<string, ModuloPyme> = { 'business-profile': 'perfil', documents: 'perfil', branches: 'sucursales', catalog: 'catalogo', contacts: 'contactos', team: 'equipo', ads: 'publicidad', agreements: 'convenios', metrics: 'metricas', subscription: 'suscripcion' }
 
 const rubroTexto: Record<string, string> = { veterinaria: 'Veterinaria', tienda: 'Tienda', peluqueria: 'Peluquería', otro: 'Servicio Pet-Care' }
 
@@ -36,6 +46,34 @@ const comparar = (actual: number, previo: number) => {
   if (!actual && !previo) return 'Sin actividad en ambos periodos'
   const d = actual - previo
   return d === 0 ? 'Igual que los 30 días anteriores' : `${d > 0 ? '+' : ''}${d} frente a los 30 días anteriores`
+}
+
+// ---------- Mercado Pago ----------
+// Con MP_ACCESS_TOKEN en el API, los planes se pagan en Mercado Pago y se activan solos al confirmarse el pago.
+type Medios = { transferencia: boolean; mercadopago: boolean }
+const RETORNO_MP = 'petsuite-retorno-mp'
+const canalTexto: Record<string, string> = { transferencia: 'transferencia', orcob: 'Orcob', mercadopago: 'Mercado Pago' }
+
+/** Si la dirección trae ?pago=mercadopago (Mercado Pago devuelve ahí a la Pyme), lo recuerda y lo quita de la barra. */
+export function marcarRetornoMercadoPago() {
+  try {
+    if (new URLSearchParams(window.location.search).get('pago') !== 'mercadopago') return sessionStorage.getItem(RETORNO_MP) === '1'
+    sessionStorage.setItem(RETORNO_MP, '1')
+    window.history.replaceState(null, '', window.location.pathname + window.location.hash)
+    return true
+  } catch { return false }
+}
+const leerRetornoMp = () => { try { return sessionStorage.getItem(RETORNO_MP) === '1' } catch { return false } }
+const olvidarRetornoMp = () => { try { sessionStorage.removeItem(RETORNO_MP) } catch { /* sin almacenamiento */ } }
+
+function useMedios() {
+  const [medios, setMedios] = useState<Medios>({ transferencia: true, mercadopago: false })
+  useEffect(() => { api<Medios>('/pagos/medios').then(setMedios).catch(() => undefined) }, [])
+  return medios
+}
+
+function PagoMercadoPago({ monto, alta }: { monto: number; alta?: boolean }) {
+  return <div className="payment-instructions"><strong>Pago con Mercado Pago</strong><ul><li>Monto: {clp(monto)} por 30 días.</li><li>Al enviar, te llevamos a Mercado Pago para pagar con tarjeta de crédito, débito o tu saldo.</li><li>{alta ? 'Tu plan comienza cuando un asesor verifica tu negocio.' : 'El plan se activa solo apenas Mercado Pago confirma el pago.'}</li></ul></div>
 }
 
 // Carga la Pyme del usuario. Si no tiene, ofrece el alta (UC-12).
@@ -54,7 +92,10 @@ export function RegisterPyme({ onDone }: { onDone: () => void }) {
   const [errorField, setErrorField] = useState('')
   const [busy, setBusy] = useState(false)
   const [codigo, setCodigo] = useState('')
+  const medios = useMedios()
   useEffect(() => { api<Comuna[]>('/comunas').then(setComunas).catch(() => undefined) }, [])
+  // Con Mercado Pago disponible, es el medio sugerido (se activa solo, sin esperar a un asesor).
+  useEffect(() => { if (medios.mercadopago) setForm(f => f.canal_pago === 'transferencia' ? { ...f, canal_pago: 'mercadopago' } : f) }, [medios.mercadopago])
   const set = (key: string, value: string | number) => { setForm({ ...form, [key]: value }); if (errorField === key) { setError(''); setErrorField('') } }
   const fieldProps = (key: string) => ({ id: `register-${key}`, 'aria-invalid': errorField === key, 'aria-describedby': errorField === key ? 'register-field-error' : undefined })
   const plan = planPorId(form.plan_id)
@@ -71,12 +112,13 @@ export function RegisterPyme({ onDone }: { onDone: () => void }) {
     const d = parsed.data
     setBusy(true); setError('')
     try {
-      const r = await api<{ codigo_orcob: string | null }>('/pymes', { method: 'POST', body: { nombre_comercial: d.nombre_comercial, rut_empresa: d.rut_empresa, rubro: d.rubro, comuna_id: d.comuna_id, plan_id: d.plan_id, canal_pago: form.canal_pago, ...(d.direccion && { direccion: d.direccion }), ...(d.telefono && { telefono: d.telefono }), ...(d.whatsapp && { whatsapp: d.whatsapp }), ...(d.descripcion && { descripcion: d.descripcion }), ...(d.referencia_pago && { referencia_pago: d.referencia_pago }), ...(d.latitud !== null && { latitud: d.latitud }), ...(d.longitud !== null && { longitud: d.longitud }) } })
+      const r = await api<{ codigo_orcob: string | null; pago_url?: string | null }>('/pymes', { method: 'POST', body: { nombre_comercial: d.nombre_comercial, rut_empresa: d.rut_empresa, rubro: d.rubro, comuna_id: d.comuna_id, plan_id: d.plan_id, canal_pago: plan.precio_mensual_clp > 0 ? form.canal_pago : 'transferencia', ...(d.direccion && { direccion: d.direccion }), ...(d.telefono && { telefono: d.telefono }), ...(d.whatsapp && { whatsapp: d.whatsapp }), ...(d.descripcion && { descripcion: d.descripcion }), ...(d.referencia_pago && { referencia_pago: d.referencia_pago }), ...(d.latitud !== null && { latitud: d.latitud }), ...(d.longitud !== null && { longitud: d.longitud }) } })
+      if (r.pago_url) { window.location.assign(r.pago_url); return }
       if (r.codigo_orcob) { setCodigo(r.codigo_orcob); setBusy(false) } else onDone()
     } catch (e) { setError(errorText(e)); setErrorField(''); setBusy(false) }
   }
   if (codigo) return <section className="page role-page"><div className="alert-card"><div className="alert-icon"><ShoppingBag size={22} /></div><div><strong>Negocio enviado a verificación. Tu código de pago Orcob es {codigo}</strong><p>Paga {clp(plan.precio_mensual_clp)} con ese código en los canales de recaudación de Orcob. Cuando Orcob confirme el pago y el asesor verifique tu negocio, se activará el plan {plan.nombre}.</p><button className="primary" onClick={onDone}>Ir a mi panel</button></div></div></section>
-  return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">ALTA DE NEGOCIO</p><h1>Registra tu negocio</h1><p className="muted">Veterinarias, tiendas y peluquerías se publican en el directorio cuando un asesor PetSuite verifica el negocio. Empieza gratis y sube de plan cuando quieras. Sin comisiones por venta.</p></div></div>
+  return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">ALTA DE NEGOCIO</p><h1>Registra tu negocio</h1><p className="muted">Veterinarias, tiendas y peluquerías se publican en el directorio cuando un asesor PetSuite verifica el negocio. Empieza gratis y sube de plan cuando quieras. Sin comisiones por venta.</p><p className="muted">Después del alta te pediremos la patente comercial, la resolución sanitaria y, si el negocio es una empresa, la constitución de la sociedad.</p></div></div>
     <div className="settings-card"><div className="settings-card-heading"><div><p className="eyebrow">PASO 1</p><h2>Elige tu plan</h2><p className="muted">Plan elegido: <strong>{plan.nombre}</strong>{plan.precio_mensual_clp ? ` · ${clp(plan.precio_mensual_clp)} al mes` : ' · sin costo'}.</p></div></div><PlanGrid actual={form.plan_id} onChoose={p => set('plan_id', p.id)} chooseLabel="Quiero" /></div>
     <form className="settings-card" onSubmit={submit} noValidate><div className="settings-card-heading"><div><p className="eyebrow">PASO 2</p><h2>Datos del negocio</h2></div></div><div className="settings-form-grid">
       <label>Nombre comercial<input {...fieldProps('nombre_comercial')} value={form.nombre_comercial} onChange={e => set('nombre_comercial', e.target.value)} /></label>
@@ -88,12 +130,13 @@ export function RegisterPyme({ onDone }: { onDone: () => void }) {
       <label>WhatsApp<input {...fieldProps('whatsapp')} value={form.whatsapp} onChange={e => set('whatsapp', e.target.value)} placeholder="56912345678" /></label>
       <label>Latitud (mapa, opcional)<input {...fieldProps('latitud')} value={form.latitud} onChange={e => set('latitud', e.target.value)} placeholder="-40.5735" /></label>
       <label>Longitud (mapa, opcional)<input {...fieldProps('longitud')} value={form.longitud} onChange={e => set('longitud', e.target.value)} placeholder="-73.1335" /></label>
-      {plan.precio_mensual_clp > 0 && <>{modoDemo && <label>Forma de pago<select value={form.canal_pago} onChange={e => set('canal_pago', e.target.value)}><option value="transferencia">Transferencia (la verifica un asesor)</option><option value="orcob">Código de recaudación Orcob (demo)</option></select></label>}
+      {plan.precio_mensual_clp > 0 && <>{(modoDemo || medios.mercadopago) && <label>Forma de pago<select value={form.canal_pago} onChange={e => set('canal_pago', e.target.value)}>{medios.mercadopago && <option value="mercadopago">Mercado Pago: tarjeta o saldo (se confirma solo)</option>}<option value="transferencia">Transferencia (la verifica un asesor)</option>{modoDemo && <option value="orcob">Código de recaudación Orcob (demo)</option>}</select></label>}
         {form.canal_pago === 'transferencia' && <label>Referencia de la transferencia (opcional)<input {...fieldProps('referencia_pago')} value={form.referencia_pago} onChange={e => set('referencia_pago', e.target.value)} placeholder="Si ya transferiste: N.º o glosa" /></label>}</>}
     </div>
       {plan.precio_mensual_clp > 0 && form.canal_pago === 'transferencia' && <PagoTransferencia monto={plan.precio_mensual_clp} negocio={form.nombre_comercial.trim() || 'tu negocio'} />}
+      {plan.precio_mensual_clp > 0 && form.canal_pago === 'mercadopago' && <PagoMercadoPago monto={plan.precio_mensual_clp} alta />}
       <label className="composer-label">Descripción<textarea {...fieldProps('descripcion')} rows={3} maxLength={1000} value={form.descripcion} onChange={e => set('descripcion', e.target.value)} /></label>
-      {error && <div className="form-error" id={errorField ? 'register-field-error' : undefined} role={errorField ? undefined : 'alert'}>{error}</div>}<div className="settings-actions"><span className="muted">Plan {plan.nombre}{plan.precio_mensual_clp ? ` · ${clp(plan.precio_mensual_clp)}/mes` : ''}</span><button className="primary" disabled={busy}>{busy ? 'Enviando...' : 'Enviar para verificación'}</button></div></form></section>
+      {error && <div className="form-error" id={errorField ? 'register-field-error' : undefined} role={errorField ? undefined : 'alert'}>{error}</div>}<div className="settings-actions"><span className="muted">Plan {plan.nombre}{plan.precio_mensual_clp ? ` · ${clp(plan.precio_mensual_clp)}/mes` : ''}</span><button className="primary" disabled={busy}>{busy ? 'Enviando...' : plan.precio_mensual_clp > 0 && form.canal_pago === 'mercadopago' ? 'Enviar e ir a pagar' : 'Enviar para verificación'}</button></div></form></section>
 }
 
 /** Cómo pagar un plan por transferencia: datos de la cuenta de PetSuite o, si aún no están, el aviso de que llegarán por correo. */
@@ -101,9 +144,11 @@ function PagoTransferencia({ monto, negocio }: { monto: number; negocio: string 
   return <div className="payment-instructions"><strong>Cómo pagar</strong><ul>{instruccionesTransferencia(monto, negocio).map(l => <li key={l}>{l}</li>)}</ul><p className="muted">Te enviamos esto también por correo. El plan se activa cuando un asesor confirma el pago.</p></div>
 }
 
-function StatusBanner({ pyme }: { pyme: MiPyme }) {
+function StatusBanner({ pyme, onDocuments }: { pyme: MiPyme; onDocuments?: () => void }) {
   if (pyme.estado_verificacion === 'aprobada') return null
-  return <div className="alert-card"><div className="alert-icon"><ShoppingBag size={22} /></div><div><strong>Tu negocio está: {estadoTexto[pyme.estado_verificacion]}</strong><p>{pyme.estado_verificacion === 'pendiente' ? 'Revisaremos tus datos y tu pago. Mientras tanto puedes preparar tu catálogo; se publicará al aprobarse.' : 'Contacta al equipo PetSuite para revisar tu solicitud.'}</p></div></div>
+  const faltan = pyme.estado_verificacion === 'pendiente' ? pyme.documentos_faltan ?? [] : []
+  if (faltan.length) return <div className="alert-card warn"><div className="alert-icon"><FileUp size={22} /></div><div><strong>Sube tus documentos para publicar tu negocio</strong><p>Falta: {faltan.join(', ')}. Un asesor los revisa antes de aprobar el alta; mientras tanto puedes preparar tu catálogo.</p>{onDocuments && pyme.permisos.includes('perfil') && <button type="button" className="primary" onClick={onDocuments}>Subir documentos</button>}</div></div>
+  return <div className="alert-card"><div className="alert-icon"><ShoppingBag size={22} /></div><div><strong>Tu negocio está: {estadoTexto[pyme.estado_verificacion]}</strong><p>{pyme.estado_verificacion === 'pendiente' ? 'Revisaremos tus datos, tus documentos y tu pago. Mientras tanto puedes preparar tu catálogo; se publicará al aprobarse.' : 'Contacta al equipo PetSuite para revisar tu solicitud.'}</p></div></div>
 }
 
 // Aviso de gracia o de baja a Gratis: el negocio sigue visible, pero sus beneficios dependen de renovar.
@@ -113,7 +158,7 @@ function PlanAlert({ pyme }: { pyme: MiPyme }) {
   return null
 }
 
-export function BusinessArea({ active }: { active: string }) {
+export function BusinessArea({ active, setActive }: { active: string; setActive?: (vista: string) => void }) {
   const { pyme, loading, error, reload } = usePyme()
   if (loading) return <section className="page">{error ? <ErrorState message={error} onRetry={() => void reload()} /> : <LoadingState label="Cargando negocio" />}</section>
   if (!pyme) return <RegisterPyme onDone={reload} />
@@ -121,6 +166,7 @@ export function BusinessArea({ active }: { active: string }) {
   const modulo = vistaModulo[active]
   if (modulo && !pyme.permisos.includes(modulo)) return <section className="page role-page"><PermissionState description="Tu rol en la Pyme no tiene acceso a este módulo. Pide permisos al dueño del negocio." /></section>
   if (active === 'business-profile') return pyme.sucursal ? <Branches pyme={pyme} /> : <BusinessProfile pyme={pyme} onSaved={reload} />
+  if (active === 'documents') return <BusinessDocuments pyme={pyme} onChange={reload} />
   if (active === 'branches') return <Branches pyme={pyme} />
   if (active === 'catalog') return <Catalog pyme={pyme} />
   if (active === 'contacts') return <BusinessContacts pyme={pyme} />
@@ -129,10 +175,10 @@ export function BusinessArea({ active }: { active: string }) {
   if (active === 'agreements') return <PymeAgreements pyme={pyme} />
   if (active === 'metrics') return <MetricsView pyme={pyme} />
   if (active === 'subscription') return <Subscription pyme={pyme} onChange={reload} />
-  return <Overview pyme={pyme} />
+  return <Overview pyme={pyme} onDocuments={setActive ? () => setActive('documents') : undefined} />
 }
 
-function Overview({ pyme }: { pyme: MiPyme }) {
+function Overview({ pyme, onDocuments }: { pyme: MiPyme; onDocuments?: () => void }) {
   const [m, setM] = useState<Metricas | null>(null)
   const veMetricas = pyme.permisos.includes('metricas')
   useEffect(() => { if (veMetricas) api<Metricas>(`/pymes/${pyme.id}/metricas`).then(setM).catch(() => setM(null)) }, [pyme.id, veMetricas])
@@ -146,7 +192,7 @@ function Overview({ pyme }: { pyme: MiPyme }) {
       image={rubroFoto[pyme.rubro] || rubroFoto.otro}
       badges={<><PlanBadge plan={pyme.plan} /><span className={verificada ? 'chip chip-ok' : 'chip chip-warn'}>{verificada && <BadgeCheck size={13} />} {estadoTexto[pyme.estado_verificacion]}</span><span className="chip">{rubroTexto[pyme.rubro] || pyme.rubro}</span></>}
       stats={[{ label: 'Ítems en catálogo', value: pyme.uso.items }, { label: pyme.uso.sucursales === 1 ? 'Local' : 'Locales', value: pyme.uso.sucursales }, { label: 'Cuentas de equipo', value: pyme.uso.usuarios }, { label: 'Ofertas vigentes', value: pyme.uso.ofertas }]} />
-    <StatusBanner pyme={pyme} />
+    <StatusBanner pyme={pyme} onDocuments={onDocuments} />
     <PlanAlert pyme={pyme} />
     {veMetricas && <div className="business-stats"><Metric icon={Eye} label="Visitas al perfil" value={String(t?.visita_perfil ?? 0)} trend={t && a ? comparar(t.visita_perfil, a.visita_perfil) : 'Últimos 30 días'} /><Metric icon={Package} tone="info" label="Vistas de productos" value={String(t?.vista_item ?? 0)} trend={t && a ? comparar(t.vista_item, a.vista_item) : 'Últimos 30 días'} /><Metric icon={MousePointerClick} tone="warm" label="Clics de contacto" value={String((t?.clic_contacto ?? 0) + (t?.clic_whatsapp ?? 0))} trend={t && a ? comparar(t.clic_contacto + t.clic_whatsapp, a.clic_contacto + a.clic_whatsapp) : 'Últimos 30 días'} /></div>}
     <div className="business-activity plan-overview"><div className="plan-overview-head"><div><p className="eyebrow">TU PLAN</p><h2><PlanBadge plan={pyme.plan} /> {pyme.plan.precio_mensual_clp ? `${clp(pyme.plan.precio_mensual_clp)} al mes` : 'Sin costo'}</h2><p>{pyme.suscripcion && pyme.dias_mora === 0 ? `Vigente hasta el ${fechaLarga(pyme.suscripcion.fin)}. Tarifa plana, sin comisiones por venta.` : pyme.plan.codigo === 'gratis' ? 'Apareces en el directorio con lo esencial. Sube de plan para sumar sucursales, equipo, ofertas, publicidad y convenios.' : ''}{pyme.solicitud_pendiente ? ' Tienes un pago en revisión.' : ''}</p></div>{dueno && siguiente && <div className="plan-upsell"><Crown size={18} aria-hidden="true" /><span>Con <strong>{siguiente.nombre}</strong> ({clp(siguiente.precio_mensual_clp)}/mes) tendrías {siguiente.limites.items} ítems, {siguiente.limites.sucursales} {siguiente.limites.sucursales === 1 ? 'sucursal' : 'sucursales'} y {siguiente.limites.usuarios} cuentas de equipo.</span></div>}</div>
@@ -238,7 +284,8 @@ function MetricsView({ pyme }: { pyme: MiPyme }) {
   const canales = [['Llamadas', t.clic_contacto, a.clic_contacto], ['WhatsApp', t.clic_whatsapp, a.clic_whatsapp]] as const
   const mejora = (desde: string) => <div className="role-panel locked-panel"><p className="eyebrow">DISPONIBLE DESDE {desde.toUpperCase()}</p><p className="muted">Mejora tu plan en Suscripción para ver este detalle.</p></div>
   return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">GESTIÓN B2B · MÉTRICAS {m.nivel.toUpperCase()}</p><h1>Panel de métricas</h1><p className="muted">Cómo te encuentra la comunidad. Últimos 30 días comparados con los 30 anteriores.</p></div><PlanBadge plan={pyme.plan} /></div>
-    <div className="metric-grid"><Metric icon={Eye} label="Visitas al perfil" value={String(t.visita_perfil)} trend={comparar(t.visita_perfil, a.visita_perfil)} /><Metric icon={Package} tone="info" label="Vistas de ítems" value={String(t.vista_item)} trend={comparar(t.vista_item, a.vista_item)} /><Metric icon={MousePointerClick} tone="warm" label="Clics de contacto" value={String(contactos)} trend={comparar(contactos, a.clic_contacto + a.clic_whatsapp)} /><Metric icon={Ticket} tone="success" label="Cupones canjeados" value={String(m.canjes_30d)} trend="Ventas atribuidas a ONG aliadas" /></div>
+    <div className="metric-grid"><Metric icon={Eye} label="Visitas al perfil" value={String(t.visita_perfil)} trend={comparar(t.visita_perfil, a.visita_perfil)} /><Metric icon={Package} tone="info" label="Vistas de ítems" value={String(t.vista_item)} trend={comparar(t.vista_item, a.vista_item)} /><Metric icon={MousePointerClick} tone="warm" label="Tasa de contacto" value={m.tasa_contacto == null ? 'Sin datos' : `${m.tasa_contacto} %`} trend={`${contactos} ${contactos === 1 ? 'clic' : 'clics'} para llamar o escribir · ${comparar(contactos, a.clic_contacto + a.clic_whatsapp)}`} /><Metric icon={Ticket} tone="success" label="Cupones canjeados" value={String(m.canjes_30d)} trend="Ventas atribuidas a ONG aliadas" /></div>
+    <KpiNegocio m={m} mejora={mejora} />
     <article className="admin-chart-card"><div className="chart-heading"><div><p className="eyebrow">ACTIVIDAD</p><h2>Eventos por día</h2></div></div>{m.por_dia.length ? <div className="bar-chart" aria-label="Eventos por día">{m.por_dia.map(d => <div className="bar-column" key={d.dia}><span style={{ height: `${Math.max(6, (d.eventos / max) * 100)}%` }} /><small>{new Date(d.dia).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })}</small></div>)}</div> : <p className="muted">Aún no hay actividad registrada.</p>}</article>
     <div className="metrics-split">
       {m.nivel === 'basicas' ? mejora('Plata') : <div className="role-panel"><p className="eyebrow">CONTACTO POR CANAL</p><h2>Cómo te escriben</h2><div className="channel-list">{canales.map(([label, n, prev]) => <div key={label}><div className="channel-head"><strong>{label}</strong><small>{n} · {comparar(n, prev)}</small></div><div className="channel-bar" aria-hidden="true"><span style={{ width: `${contactos ? (n / contactos) * 100 : 0}%` }} /></div></div>)}</div>{!contactos && <p className="muted">Publica tu teléfono y WhatsApp en el perfil para recibir contactos.</p>}</div>}
@@ -247,44 +294,99 @@ function MetricsView({ pyme }: { pyme: MiPyme }) {
     </div></section>
 }
 
+const horaTexto = (h: number) => `${String(h).padStart(2, '0')}:00 a ${String((h + 1) % 24).padStart(2, '0')}:00`
+const variacionTexto = (c: ImpactoCampana) => c.variacion_pct === null ? (c.visitas_despues ? 'Sin visitas antes para comparar' : 'Sin visitas todavía') : `${c.variacion_pct > 0 ? '+' : ''}${c.variacion_pct} % de visitas`
+
+/** KPI de negocio: cuándo te visitan, qué cupón funciona y cuánto movió cada campaña con una ONG. */
+function KpiNegocio({ m, mejora }: { m: Metricas; mejora: (desde: string) => React.ReactNode }) {
+  const franjas = m.por_franja ?? [], maxFranja = Math.max(1, ...franjas.map(f => f.visitas))
+  return <div className="metrics-split">
+    {m.nivel === 'basicas' ? mejora('Plata') : <div className="role-panel"><p className="eyebrow">CUÁNDO TE VISITAN</p><h2>Visitas por franja horaria</h2>
+      <div className="channel-list">{franjas.map(f => <div key={f.franja}><div className="channel-head"><strong>{f.franja}</strong><small>{f.horas} · {f.visitas} {f.visitas === 1 ? 'visita' : 'visitas'}</small></div><div className="channel-bar" aria-hidden="true"><span style={{ width: `${(f.visitas / maxFranja) * 100}%` }} /></div></div>)}</div>
+      <p className="muted">{m.hora_peak == null ? 'Aún no hay visitas en los últimos 30 días.' : `Hora con más visitas: ${horaTexto(m.hora_peak)}. Publica tus ofertas y responde las consultas antes de esa hora.`}</p></div>}
+    <div className="role-panel"><p className="eyebrow">CÓDIGOS DE DESCUENTO</p><h2>Cupones más usados</h2>
+      <div className="role-list">{m.cupones?.length ? m.cupones.map(c => <div key={c.codigo}><span className={c.activo ? 'list-dot' : 'list-dot soft'} /><strong>{c.codigo}</strong><small>{c.canjes_30d} {c.canjes_30d === 1 ? 'canje' : 'canjes'} · {c.ong}</small></div>) : <div><span className="list-dot soft" /><strong>Sin convenios activos</strong><small>Crea uno en Promoción → Convenios</small></div>}</div></div>
+    <div className="role-panel"><p className="eyebrow">CAMPAÑAS CON ONG</p><h2>Impacto en tus visitas</h2>
+      {m.campanas?.length ? <div className="campaign-list">{m.campanas.map(c => <div className="campaign-impact" key={`${c.codigo}-${c.desde}`}><strong>{c.titulo}</strong><small>Con {c.ong} · desde el {fechaLarga(c.desde)}</small>
+        <p><span className={`chip ${c.variacion_pct != null && c.variacion_pct > 0 ? 'chip-ok' : c.variacion_pct != null && c.variacion_pct < 0 ? 'chip-alert' : ''}`}>{variacionTexto(c)}</span></p>
+        <small>{c.visitas_antes} visitas en los {c.dias} días anteriores → {c.visitas_despues} en los {c.dias} días siguientes · {c.canjes} {c.canjes === 1 ? 'canje' : 'canjes'}</small></div>)}</div>
+        : <p className="muted">Cuando empiece un convenio con una ONG, aquí verás cuántas visitas más te trajo comparado con los días anteriores.</p>}</div>
+  </div>
+}
+
 // ---------- Suscripción ----------
-type Pago = { id: string; monto_clp: number; estado: string; canal: 'transferencia' | 'orcob'; referencia: string | null; codigo_orcob: string | null }
+type Pago ={ id: string; monto_clp: number; estado: string; canal: 'transferencia' | 'orcob' | 'mercadopago'; referencia: string | null; codigo_orcob: string | null }
 type Periodo = { id: string; estado: string; inicio: string; fin: string; plan: string; plan_codigo: Plan['codigo']; precio_mensual_clp: number; pagos: Pago[] }
 const periodoTexto: Record<string, string> = { activa: 'Activa', pendiente: 'En revisión', vencida: 'Vencida', cancelada: 'Cancelada' }
 
 function Subscription({ pyme, onChange }: { pyme: MiPyme; onChange: () => Promise<void> }) {
   const [rows, setRows] = useState<Periodo[] | null>(null)
   const [elegido, setElegido] = useState<Plan | null>(null)
-  const [form, setForm] = useState({ canal: 'transferencia' as 'transferencia' | 'orcob', referencia: '' })
+  const [form, setForm] = useState({ canal: 'transferencia' as 'transferencia' | 'orcob' | 'mercadopago', referencia: '' })
   const [error, setError] = useState('')
   const [done, setDone] = useState('')
+  const [yendo, setYendo] = useState(false)
+  const medios = useMedios()
+  const [retorno] = useState(leerRetornoMp)
+  const revisado = useRef(false)
+  useEffect(() => { if (medios.mercadopago) setForm(f => f.canal === 'transferencia' ? { ...f, canal: 'mercadopago' } : f) }, [medios.mercadopago])
   const load = useCallback(() => api<Periodo[]>(`/pymes/${pyme.id}/suscripcion`).then(setRows).catch(() => setRows([])), [pyme.id])
   useEffect(() => { void load() }, [load])
   const pendiente = rows?.flatMap(r => r.estado === 'pendiente' ? r.pagos.filter(p => p.estado === 'pendiente') : [])[0]
+  // Un pago con Mercado Pago sin completar no bloquea: elegir otro plan o medio lo reemplaza.
+  const bloquea = !!pendiente && pendiente.canal !== 'mercadopago'
   const reload = async () => { await load(); await onChange() }
+  const verificarMp = useCallback(async (pago: Pago, silencioso = false) => {
+    setError('')
+    try {
+      const r = await api<{ estado: string; inicio: string; fin: string }>(`/pymes/${pyme.id}/pagos/${pago.id}/mercadopago/verificar`, { method: 'POST' })
+      if (r.estado === 'confirmado') setDone(pyme.estado_verificacion === 'aprobada' ? `Mercado Pago confirmó tu pago: tu plan rige del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}.` : 'Mercado Pago confirmó tu pago. Tu plan comenzará cuando un asesor verifique tu negocio.')
+      else if (!silencioso) setDone('Mercado Pago todavía no informa el pago. Si pagaste hace poco, espera unos minutos y vuelve a revisar.')
+      await reload()
+    } catch (e) { setError(errorText(e)) }
+  }, [pyme.id, pyme.estado_verificacion]) // reload cambia en cada render; basta con la Pyme
+  // Al volver de Mercado Pago se revisa el pago una vez, por si el aviso de Mercado Pago aún no llega.
+  useEffect(() => {
+    if (!retorno || !rows || revisado.current) return
+    revisado.current = true
+    olvidarRetornoMp()
+    // Los periodos vienen del más reciente al más antiguo: el primer pago con Mercado Pago es el último que se pidió.
+    const ultimoMp = rows.flatMap(r => r.pagos).find(p => p.canal === 'mercadopago')
+    if (ultimoMp?.estado === 'pendiente') void verificarMp(ultimoMp, true)
+    else if (ultimoMp?.estado === 'confirmado') setDone('Mercado Pago confirmó tu pago.')
+  }, [retorno, rows, verificarMp])
+  const reabrirMp = async (pago: Pago) => {
+    setError(''); setYendo(true)
+    try { window.location.assign((await api<{ url: string }>(`/pymes/${pyme.id}/pagos/${pago.id}/mercadopago`, { method: 'POST' })).url) } catch (e) { setError(errorText(e)); setYendo(false) }
+  }
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setError(''); setDone('')
     if (!elegido) return
     try {
-      const r = await api<{ inicio: string; fin: string; codigo_orcob: string | null }>(`/pymes/${pyme.id}/suscripcion`, { method: 'POST', body: { plan_id: elegido.id, canal: form.canal, ...(form.canal === 'transferencia' && form.referencia.trim() && { referencia_pago: form.referencia.trim() }) } })
-      setDone(r.codigo_orcob ? `Paga ${clp(elegido.precio_mensual_clp)} con el código Orcob ${r.codigo_orcob}. El plan ${elegido.nombre} se activa apenas Orcob confirme el pago (del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}).` : `Solicitud enviada. Te enviamos por correo cómo pagar. Cuando un asesor confirme la transferencia, el plan ${elegido.nombre} irá del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}.`)
+      setYendo(form.canal === 'mercadopago')
+      const r = await api<{ inicio: string; fin: string; codigo_orcob: string | null; pago_url?: string | null; aviso?: string }>(`/pymes/${pyme.id}/suscripcion`, { method: 'POST', body: { plan_id: elegido.id, canal: form.canal, ...(form.canal === 'transferencia' && form.referencia.trim() && { referencia_pago: form.referencia.trim() }) } })
+      if (r.pago_url) { window.location.assign(r.pago_url); return }
+      setYendo(false)
+      setDone(r.aviso ?? (r.codigo_orcob ? `Paga ${clp(elegido.precio_mensual_clp)} con el código Orcob ${r.codigo_orcob}. El plan ${elegido.nombre} se activa apenas Orcob confirme el pago (del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}).` : `Solicitud enviada. Te enviamos por correo cómo pagar. Cuando un asesor confirme la transferencia, el plan ${elegido.nombre} irá del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}.`))
       setForm({ ...form, referencia: '' }); setElegido(null); await reload()
-    } catch (e) { setError(errorText(e)) }
+    } catch (e) { setError(errorText(e)); setYendo(false) }
   }
   const simularOrcob = async (pago: Pago) => { setError(''); try { await api(`/pymes/${pyme.id}/pagos/${pago.id}/orcob-confirmado`, { method: 'POST' }); setDone('Orcob confirmó el pago: tu plan quedó activo.'); await reload() } catch (e) { setError(errorText(e)) } }
-  return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">MODELO DE SUSCRIPCIÓN</p><h1>Suscripción</h1><p className="muted">Tarifa plana mensual en cuatro capas, sin comisiones por venta. Paga por transferencia: un asesor la confirma y activa tu plan.{modoDemo && ' En la demo también puedes probar el código de recaudación de Orcob.'}</p></div><PlanBadge plan={pyme.plan} /></div>
+  return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">MODELO DE SUSCRIPCIÓN</p><h1>Suscripción</h1><p className="muted">Tarifa plana mensual en cuatro capas, sin comisiones por venta. {medios.mercadopago ? 'Paga con Mercado Pago y tu plan se activa al instante, o por transferencia, que confirma un asesor.' : 'Paga por transferencia: un asesor la confirma y activa tu plan.'}{modoDemo && ' En la demo también puedes probar el código de recaudación de Orcob.'}</p></div><PlanBadge plan={pyme.plan} /></div>
     <StatusBanner pyme={pyme} />
     <PlanAlert pyme={pyme} />
     {error && <div className="form-error" role="alert">{error}</div>}{done && <p className="save-message" role="status">{done}</p>}
-    {pendiente && <div className="alert-card"><div className="alert-icon"><AlertCircle size={22} /></div><div><strong>Pago en revisión · {clp(pendiente.monto_clp)} por {pendiente.canal === 'orcob' ? 'Orcob' : 'transferencia'}</strong><p>{pendiente.canal === 'orcob' ? `Código de pago Orcob: ${pendiente.codigo_orcob}. En producción, Orcob avisa el pago a PetSuite y el plan se activa automáticamente.` : 'Un asesor PetSuite confirmará la transferencia. Podrás enviar otra solicitud cuando la confirme o la rechace.'}</p>{pendiente.canal === 'transferencia' && <PagoTransferencia monto={pendiente.monto_clp} negocio={pyme.nombre_comercial} />}{pendiente.canal === 'orcob' && modoDemo && <button className="secondary" onClick={() => simularOrcob(pendiente)}>Simular aviso de pago de Orcob (demo)</button>}</div></div>}
+    {pendiente?.canal === 'mercadopago' && <div className="alert-card warn"><div className="alert-icon"><AlertCircle size={22} /></div><div><strong>Pago pendiente en Mercado Pago · {clp(pendiente.monto_clp)}</strong><p>Si ya pagaste, revisa el estado. Si cerraste la ventana, vuelve a abrir el pago. También puedes elegir otro plan o pagar por transferencia: esta solicitud sin pagar se reemplaza.</p><div className="settings-actions"><button type="button" className="secondary" onClick={() => verificarMp(pendiente)}>Ya pagué: revisar</button><button type="button" className="primary" disabled={yendo} onClick={() => reabrirMp(pendiente)}>{yendo ? 'Abriendo Mercado Pago…' : 'Pagar con Mercado Pago'}</button></div></div></div>}
+    {pendiente && pendiente.canal !== 'mercadopago' && <div className="alert-card"><div className="alert-icon"><AlertCircle size={22} /></div><div><strong>Pago en revisión · {clp(pendiente.monto_clp)} por {canalTexto[pendiente.canal]}</strong><p>{pendiente.canal === 'orcob' ? `Código de pago Orcob: ${pendiente.codigo_orcob}. En producción, Orcob avisa el pago a PetSuite y el plan se activa automáticamente.` : 'Un asesor PetSuite confirmará la transferencia. Podrás enviar otra solicitud cuando la confirme o la rechace.'}</p>{pendiente.canal === 'transferencia' && <PagoTransferencia monto={pendiente.monto_clp} negocio={pyme.nombre_comercial} />}{pendiente.canal === 'orcob' && modoDemo && <button className="secondary" onClick={() => simularOrcob(pendiente)}>Simular aviso de pago de Orcob (demo)</button>}</div></div>}
     <div className="settings-card"><div className="settings-card-heading"><div><p className="eyebrow">COMPARA LAS CUATRO CAPAS</p><h2>Gratis, Bronce, Plata y Oro</h2><p className="muted">Al renovar o subir de plan, el nuevo periodo empieza cuando termina el que ya pagaste. Si no renuevas, tienes {DIAS_GRACIA} días de gracia y luego pasas a Gratis sin perder datos.</p></div></div>
-      <PlanGrid actual={pyme.plan.id} onChoose={pyme.estado_verificacion === 'aprobada' && !pendiente ? p => { setElegido(p); setDone(''); setError('') } : undefined} chooseLabel="Cambiar a" />
-      {pyme.estado_verificacion === 'aprobada' && !pendiente && pyme.plan.precio_mensual_clp > 0 && <div className="settings-actions"><span className="muted">¿Quieres mantener tu plan?</span><button className="secondary" onClick={() => setElegido(pyme.plan)}>Renovar {pyme.plan.nombre}</button></div>}</div>
+      <PlanGrid actual={pyme.plan.id} onChoose={pyme.estado_verificacion === 'aprobada' && !bloquea ? p => { setElegido(p); setDone(''); setError('') } : undefined} chooseLabel="Cambiar a" />
+      {pyme.estado_verificacion === 'aprobada' && !bloquea && pyme.plan.precio_mensual_clp > 0 && <div className="settings-actions"><span className="muted">¿Quieres mantener tu plan?</span><button className="secondary" onClick={() => setElegido(pyme.plan)}>Renovar {pyme.plan.nombre}</button></div>}</div>
     {elegido && (elegido.precio_mensual_clp === 0 ? <div className="alert-card"><div><strong>El plan Gratis no requiere pago</strong><p>Se aplica automáticamente cuando termina tu periodo pagado y sus días de gracia. Solo deja de renovar.</p><button className="secondary" onClick={() => setElegido(null)}>Entendido</button></div></div>
       : <form className="settings-card" onSubmit={submit} noValidate><div className="settings-card-heading"><div><p className="eyebrow">{elegido.id === pyme.plan.id ? 'RENOVAR' : 'CAMBIAR DE PLAN'}</p><h2>Plan {elegido.nombre} · {clp(elegido.precio_mensual_clp)} al mes</h2></div></div>
-        <div className="settings-form-grid">{modoDemo && <label>Forma de pago<select value={form.canal} onChange={e => setForm({ ...form, canal: e.target.value as 'transferencia' | 'orcob' })}><option value="transferencia">Transferencia bancaria</option><option value="orcob">Código de recaudación Orcob (demo)</option></select></label>}{form.canal === 'transferencia' && <label>Referencia de la transferencia (opcional)<input value={form.referencia} onChange={e => setForm({ ...form, referencia: e.target.value })} placeholder="Si ya transferiste: N.º o glosa" /></label>}</div>
+        <div className="settings-form-grid">{(modoDemo || medios.mercadopago) && <label>Forma de pago<select value={form.canal} onChange={e => setForm({ ...form, canal: e.target.value as 'transferencia' | 'orcob' | 'mercadopago' })}>{medios.mercadopago && <option value="mercadopago">Mercado Pago: tarjeta o saldo (se activa al pagar)</option>}<option value="transferencia">Transferencia bancaria</option>{modoDemo && <option value="orcob">Código de recaudación Orcob (demo)</option>}</select></label>}{form.canal === 'transferencia' && <label>Referencia de la transferencia (opcional)<input value={form.referencia} onChange={e => setForm({ ...form, referencia: e.target.value })} placeholder="Si ya transferiste: N.º o glosa" /></label>}</div>
         {form.canal === 'transferencia' && <PagoTransferencia monto={elegido.precio_mensual_clp} negocio={pyme.nombre_comercial} />}
-        <div className="settings-actions"><button type="button" className="text-button" onClick={() => setElegido(null)}>Cancelar</button><button className="primary">{form.canal === 'orcob' ? 'Generar código de pago' : 'Enviar solicitud'}</button></div></form>)}
+        {form.canal === 'mercadopago' && <PagoMercadoPago monto={elegido.precio_mensual_clp} />}
+        <div className="settings-actions"><button type="button" className="text-button" onClick={() => setElegido(null)}>Cancelar</button><button className="primary" disabled={yendo}>{form.canal === 'orcob' ? 'Generar código de pago' : form.canal === 'mercadopago' ? (yendo ? 'Abriendo Mercado Pago…' : 'Ir a pagar') : 'Enviar solicitud'}</button></div></form>)}
     <div className="section-heading"><h3>Historial de periodos y pagos</h3></div>
-    <div className="catalog-list">{rows?.map(s => <div className="catalog-item" key={s.id}><div><strong><PlanBadge plan={{ codigo: s.plan_codigo, nombre: s.plan }} /> {clp(s.precio_mensual_clp)} al mes</strong><p>{fechaLarga(s.inicio)} al {fechaLarga(s.fin)}</p>{s.pagos.map(p => <small key={p.id}>Pago {clp(p.monto_clp)} · {p.canal === 'orcob' ? `Orcob${p.codigo_orcob ? ` (código ${p.codigo_orcob})` : ''}` : 'transferencia'} · {p.estado}{p.referencia ? ` · ${p.referencia}` : ''}</small>)}</div><span className={`user-status ${s.estado === 'activa' ? 'activo' : 'suspendido'}`}>{periodoTexto[s.estado] || s.estado}</span></div>)}{rows && rows.length === 0 && <div className="empty-results">Aún no has contratado un plan pagado: estás en Gratis.</div>}</div></section>
+    <div className="catalog-list">{rows?.map(s => <div className="catalog-item" key={s.id}><div><strong><PlanBadge plan={{ codigo: s.plan_codigo, nombre: s.plan }} /> {clp(s.precio_mensual_clp)} al mes</strong><p>{fechaLarga(s.inicio)} al {fechaLarga(s.fin)}</p>{s.pagos.map(p => <small key={p.id}>Pago {clp(p.monto_clp)} · {p.canal === 'orcob' ? `Orcob${p.codigo_orcob ? ` (código ${p.codigo_orcob})` : ''}` : canalTexto[p.canal]} · {p.estado}{p.referencia && p.canal !== 'mercadopago' ? ` · ${p.referencia}` : p.referencia?.startsWith('MP-') ? ` · operación ${p.referencia.slice(3)}` : ''}</small>)}</div><span className={`user-status ${s.estado === 'activa' ? 'activo' : 'suspendido'}`}>{periodoTexto[s.estado] || s.estado}</span></div>)}{rows && rows.length === 0 && <div className="empty-results">Aún no has contratado un plan pagado: estás en Gratis.</div>}</div></section>
 }

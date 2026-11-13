@@ -4,6 +4,7 @@ import type { ApiRole, FichaDatos, Oferta } from '../shared/api'
 import type { ModuloPyme, RolEquipo } from '../shared/permissions'
 import { VERSION_PRIVACIDAD } from '../shared/legal'
 import type { TipoToken } from '../shared/cuentas'
+import type { ArchivoDocumento } from '../shared/documentos'
 
 export type Rubro = 'veterinaria' | 'tienda' | 'peluqueria' | 'otro'
 export type Verificacion = 'pendiente' | 'aprobada' | 'rechazada' | 'suspendida'
@@ -34,7 +35,7 @@ export type ContactoPyme = { id: string; pyme_id: string; remitente_id: string; 
 export type Item = { id: string; pyme_id: string; tipo: 'producto' | 'servicio'; nombre: string; descripcion: string | null; precio_referencial_clp: number | null; disponible: boolean; categoria: string | null; sin_stock: boolean; oferta: Oferta | null; creado_en: string }
 export type EventoPyme = { id: string; pyme_id: string; item_id: string | null; tipo: 'visita_perfil' | 'vista_item' | 'clic_contacto' | 'clic_whatsapp'; ocurrido_en: string }
 export type Suscripcion = { id: string; pyme_id: string; plan_id: number; inicio: string; fin: string; estado: 'pendiente' | 'activa' | 'vencida' | 'cancelada' }
-export type Pago = { id: string; suscripcion_id: string; monto_clp: number; canal: 'transferencia' | 'orcob'; referencia: string | null; codigo_orcob?: string | null; estado: 'pendiente' | 'confirmado' | 'rechazado'; pagado_en: string }
+export type Pago = { id: string; suscripcion_id: string; monto_clp: number; canal: 'transferencia' | 'orcob' | 'mercadopago'; referencia: string | null; codigo_orcob?: string | null; estado: 'pendiente' | 'confirmado' | 'rechazado'; pagado_en: string }
 // Caso derivado a cobranza externa (Orcob). Se guarda exactamente lo que se envió, para rendir cuentas (Ley 21.719).
 export type CasoCobranza = { id: string; pyme_id: string; id_caso: string; monto_clp: number; dias_mora: number; datos_enviados: Record<string, string | number>; estado: 'en_gestion' | 'pagado' | 'cerrado'; derivado_por: string; derivado_en: string; cerrado_en: string | null }
 export type TipoPublicacion = 'extravio' | 'encuentro' | 'recomendacion' | 'alerta' | 'evento' | 'adopcion'
@@ -57,7 +58,7 @@ export type Ong = {
   id: string; propietario_id: string; nombre: string; tipo: 'refugio' | 'rescatista_independiente' | 'agrupacion'; descripcion: string | null; comuna_id: number; contacto: string | null; redes_sociales: string | null
   estado_verificacion: 'pendiente' | 'aprobada' | 'rechazada'; perfil_publicado: OngPerfil | null; perfil_borrador: OngPerfil | null; perfil_estado: 'sin_enviar' | 'en_revision' | 'publicado' | 'rechazado'; perfil_motivo: string | null; creado_en: string
 }
-export type Animal = { id: string; ong_id: string; nombre: string; especie: string; raza: string | null; edad_estimada: string | null; estado_salud: string | null; historia: string | null; historial_salud: FichaDatos; foto_url: string | null; estado: 'disponible' | 'en_proceso' | 'adoptado'; mascota_id: string | null; publicado_en: string }
+export type Animal = { id: string; ong_id: string; nombre: string; especie: string; raza: string | null; edad_estimada: string | null; estado_salud: string | null; historia: string | null; historial_salud: FichaDatos; foto_url: string | null; estado: 'disponible' | 'en_proceso' | 'adoptado'; mascota_id: string | null; publicado_en: string; prioritario: boolean }
 export type Solicitud = { id: string; animal_id: string; solicitante_nombre: string | null; solicitante_contacto: string | null; mensaje: string; estado: 'nueva' | 'en_conversacion' | 'concretada' | 'cerrada'; creado_en: string }
 export type EventoAdopcion = { id: string; animal_id: string; ocurrido_en: string }
 // Publicidad sin imágenes: texto, tono de color y un destino interno. Siempre pasa por el asesor.
@@ -78,6 +79,8 @@ export type Correo = { id: string; para: string; asunto: string; cuerpo: string;
 export type EventoLimite = { clave: string; ocurrido_en: string }
 /** Foto subida por un usuario (datos en base64). En la demo, la foto de la mascota se guarda como data: URL. */
 export type Imagen = { id: string; dueno_id: string; tipo: string; datos: string; bytes: number; creado_en: string }
+/** Documento de validación de un negocio (src/shared/documentos.ts). En la demo, los archivos grandes van sin datos. */
+export type DocumentoPyme = ArchivoDocumento & { pyme_id: string; datos: string | null; subido_por: string | null; revisado_por: string | null }
 // Derechos ARSOPOL de la Ley 21.719: acceso, rectificación, supresión, oposición, portabilidad y bloqueo.
 export type SolicitudPrivacidad = { id: string; usuario_id: string; derecho: 'acceso' | 'rectificacion' | 'supresion' | 'oposicion' | 'portabilidad' | 'bloqueo'; detalle: string; estado: 'recibida' | 'en_proceso' | 'respondida' | 'rechazada'; respuesta: string | null; creado_en: string; vence_en: string; respondido_en: string | null }
 
@@ -116,11 +119,12 @@ export type Db = {
   tokens_cuenta: TokenCuenta[]
   limites: EventoLimite[]
   imagenes: Imagen[]
+  documentos: DocumentoPyme[]
 }
 
-// v7: fotos subidas por los usuarios. Los datos anteriores se descartan.
-export const STORAGE_KEY = 'petsuite-mock-db-v7'
-try { for (const old of ['petsuite-mock-db-v1', 'petsuite-mock-db-v2', 'petsuite-mock-db-v3', 'petsuite-mock-db-v4', 'petsuite-mock-db-v5', 'petsuite-mock-db-v6']) localStorage.removeItem(old) } catch { /* sin almacenamiento */ }
+// v8: documentos de validación de los negocios y pagos con Mercado Pago. Los datos anteriores se descartan.
+export const STORAGE_KEY = 'petsuite-mock-db-v8'
+try { for (const old of ['petsuite-mock-db-v1', 'petsuite-mock-db-v2', 'petsuite-mock-db-v3', 'petsuite-mock-db-v4', 'petsuite-mock-db-v5', 'petsuite-mock-db-v6', 'petsuite-mock-db-v7']) localStorage.removeItem(old) } catch { /* sin almacenamiento */ }
 export const CLAVE_DEMO = 'petsuite123'
 export { VERSION_PRIVACIDAD }
 
@@ -148,7 +152,7 @@ function seed(): Db {
     comunas: ['Osorno', 'Puerto Montt', 'Castro', 'Puerto Octay', 'Purranque', 'Puyehue', 'Río Negro', 'San Juan de la Costa', 'San Pablo', 'Calbuco', 'Cochamó', 'Fresia', 'Frutillar', 'Llanquihue', 'Los Muermos', 'Maullín', 'Puerto Varas', 'Ancud', 'Chonchi', 'Curaco de Vélez', 'Dalcahue', 'Puqueldón', 'Queilén', 'Quellón', 'Quemchi', 'Quinchao', 'Chaitén', 'Futaleufú', 'Hualaihué', 'Palena'].map((nombre, i) => ({ id: i + 1, nombre })),
     usuarios: [], sesiones: {}, mascotas: [], medallas: [], escaneos: [], mensajes: [], accesos: [], pymes: [], sucursales: [], miembros: [], catalogo: [], eventos: [], contactos_pymes: [],
     suscripciones: [], pagos: [], casos_cobranza: [], publicaciones: [], comentarios: [], reacciones: [], guardados: [], reportes: [], ongs: [], animales: [], solicitudes: [], eventos_adopcion: [],
-    banners: [], convenios: [], canjes: [], correos: [], solicitudes_privacidad: [], tokens_cuenta: [], limites: [], imagenes: [],
+    banners: [], convenios: [], canjes: [], correos: [], solicitudes_privacidad: [], tokens_cuenta: [], limites: [], imagenes: [], documentos: [],
   }
   const user = (correo: string, rol: ApiRole, nombre: string, comuna: number) => {
     const creado = t()
@@ -233,7 +237,7 @@ function seed(): Db {
   const nueva = ong('ong2@petsuite.cl', 'Rescate Nuevo', 'rescatista_independiente', 2, 'pendiente', null)
   const historial = () => ficha({ vacunas: [{ nombre: 'Óctuple', fecha: '2026-07-02' }], tratamientos: [{ descripcion: 'Desparasitación', inicio: '2026-07-02' }] })
   const animal = (ong_id: string, nombre: string, especie: string, raza: string, edad: string, salud: string | null, historia: string, foto: string | null, h = historial()): Animal =>
-    ({ id: uid(), ong_id, nombre, especie, raza, edad_estimada: edad, estado_salud: salud, historia, historial_salud: h, foto_url: foto, estado: 'disponible', mascota_id: null, publicado_en: t() })
+    ({ id: uid(), ong_id, nombre, especie, raza, edad_estimada: edad, estado_salud: salud, historia, historial_salud: h, foto_url: foto, estado: 'disponible', mascota_id: null, publicado_en: t(), prioritario: false })
   db.animales.push(
     animal(patitas, 'Canela', 'perro', 'Mestiza', '1 a 2 años', 'Sana, esterilizada y vacunada', 'Rescatada de la vía pública en Osorno. Es cariñosa y se lleva bien con otros perros.', '/img/canela.jpg'),
     animal(patitas, 'Tomás', 'gato', 'Europeo', '6 meses', 'Sano y desparasitado', 'Encontrado junto a su camada. Juguetón y muy sociable.', '/img/gato-atigrado.jpg'),

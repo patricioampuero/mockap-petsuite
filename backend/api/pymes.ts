@@ -8,13 +8,16 @@ import { auth, avisarAsesores, correoDe, enviarCorreo, orcobDisponible } from '.
 import { comunasDe, dayOffset, fail, fecha, hace, idDe, now, on, parse, uid, una } from './core'
 import type { Sql } from './db'
 import { CONSULTAS_NO_DISPONIBLES } from '../../src/shared/fichas'
-import { avisoSolicitud, correoSolicitudPlan, ORCOB_NO_DISPONIBLE, SOLO_ORCOB_CONFIRMA } from '../../src/shared/pagos'
+import { documentosDe } from './documentos'
+import { DIAS_EVENTOS_CAMPANAS, kpisNegocio, type EventoKpi } from '../../src/shared/kpis'
+import { avisoSolicitud, correoSolicitudPlan, MERCADO_PAGO_NO_DISPONIBLE, ORCOB_NO_DISPONIBLE, PAGO_ANTERIOR_RECIBIDO, SOLO_ORCOB_CONFIRMA, type CanalPago } from '../../src/shared/pagos'
+import { crearPreferencia, mercadoPagoDisponible, verificarPagoMp } from './mercadopago'
 import {
   cargarVitrina, EN_VITRINA, estadoPlanDe, exigirCupo, ITEM, itemDe, itemsPublicosDe, miPyme, ofertaVigente, permisosEnPyme, planDe, PYME, pymeResumen, pymeResumenDe,
   suscripcionesDe, ultimaDe, usoPyme, type Item, type Pyme, type Suscripcion,
 } from './negocio'
 
-export type Pago = { id: string; suscripcion_id: string; monto_clp: number; canal: 'transferencia' | 'orcob'; referencia: string | null; codigo_orcob: string | null; estado: 'pendiente' | 'confirmado' | 'rechazado'; pagado_en: string }
+export type Pago = { id: string; suscripcion_id: string; monto_clp: number; canal: CanalPago; referencia: string | null; codigo_orcob: string | null; estado: 'pendiente' | 'confirmado' | 'rechazado'; pagado_en: string }
 
 export const pagoPendiente = (sql: Sql, pymeId: string) => una<Pago>(sql, `select pg.* from pagos pg join suscripciones s on s.id = pg.suscripcion_id
   where s.pyme_id = $1 and pg.estado = 'pendiente' order by pg.pagado_en limit 1`, [pymeId])
@@ -43,6 +46,7 @@ on('GET', '/pymes/mias', async req => {
     const sucursal = acceso.miembro?.sucursal_id ? await una<{ id: string; nombre: string }>(req.sql, 'select id, nombre from sucursales where id = $1', [acceso.miembro.sucursal_id]) : null
     resultado.push({
       id: p.id, nombre_comercial: p.nombre_comercial, rubro: p.rubro, estado_verificacion: p.estado_verificacion, comuna_id: p.comuna_id, solicitud_pendiente: !!(await pagoPendiente(req.sql, p.id)),
+      documentos_faltan: (await documentosDe(req.sql, p)).faltan,
       rol_interno: acceso.miembro?.rol ?? 'dueno', sucursal: sucursal ? { id: sucursal.id, nombre: sucursal.nombre } : null, permisos: acceso.permisos,
       plan: estado.plan, en_gracia: estado.en_gracia, dias_mora: estado.dias_mora, uso: await usoPyme(req.sql, p.id),
       suscripcion: s && pagado ? { estado: s.estado, fin: s.fin, plan: pagado.nombre, plan_id: pagado.id, precio: pagado.precio_mensual_clp, max_items: estado.plan.limites.items } : null,
@@ -65,7 +69,7 @@ on('POST', '/pymes', async req => {
     telefono: z.string().max(20).optional(),
     whatsapp: z.string().max(20).optional(),
     plan_id: z.number().int().positive().default(PLAN_GRATIS.id),
-    canal_pago: z.enum(['transferencia', 'orcob']).default('transferencia'),
+    canal_pago: z.enum(['transferencia', 'orcob', 'mercadopago']).default('transferencia'),
     referencia_pago: z.string().max(60).optional(),
   }), req.body)
   if (await una(req.sql, 'select 1 from pymes where lower(rut_empresa) = lower($1)', [d.rut_empresa])) return fail(409, 'Ese RUT de empresa ya está registrado')
@@ -74,6 +78,7 @@ on('POST', '/pymes', async req => {
   const comunas = await comunasDe(req.sql)
   if (!comunas.has(d.comuna_id)) return fail(400, 'Comuna no válida')
   if (plan.precio_mensual_clp > 0 && d.canal_pago === 'orcob' && !orcobDisponible()) return fail(422, ORCOB_NO_DISPONIBLE)
+  if (plan.precio_mensual_clp > 0 && d.canal_pago === 'mercadopago' && !mercadoPagoDisponible()) return fail(422, MERCADO_PAGO_NO_DISPONIBLE)
   const p: Pyme = {
     id: uid(), propietario_id: u.id, nombre_comercial: d.nombre_comercial, rut_empresa: d.rut_empresa, rubro: d.rubro, descripcion: d.descripcion ?? null, comuna_id: d.comuna_id,
     direccion: d.direccion ?? null, latitud: d.latitud != null ? String(d.latitud) : null, longitud: d.longitud != null ? String(d.longitud) : null,
@@ -83,7 +88,7 @@ on('POST', '/pymes', async req => {
     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
   [p.id, p.propietario_id, p.nombre_comercial, p.rut_empresa, p.rubro, p.descripcion, p.comuna_id, p.direccion, p.latitud, p.longitud, p.telefono, p.whatsapp, p.estado_verificacion, p.creado_en])
   // Gratis no genera cobro: la Pyme queda en plan Gratis al aprobarse. Un plan pagado espera la verificación del pago.
-  const cobro = plan.precio_mensual_clp > 0 ? await registrarPago(req.sql, p, plan, dayOffset(0), d.canal_pago, d.referencia_pago || null) : null
+  const cobro = plan.precio_mensual_clp > 0 ? await registrarPago(req.sql, p, plan, dayOffset(0), d.canal_pago, d.canal_pago === 'transferencia' ? d.referencia_pago || null : null) : null
   // El equipo revisa la solicitud; la Pyme recibe cómo pagar si eligió un plan por transferencia.
   const aviso = avisoSolicitud('alta', p.nombre_comercial, p.rut_empresa, comunas.get(p.comuna_id) ?? '', plan.nombre, plan.precio_mensual_clp, d.canal_pago, cobro?.canal === 'transferencia' ? cobro.referencia : null)
   await avisarAsesores(req.sql, aviso.asunto, aviso.cuerpo)
@@ -91,11 +96,19 @@ on('POST', '/pymes', async req => {
     const c = correoSolicitudPlan(p.nombre_comercial, plan.nombre, plan.precio_mensual_clp, !!cobro.referencia)
     await enviarCorreo(req.sql, u.correo, c.asunto, c.cuerpo, 'cobranza')
   }
-  return { id: p.id, estado_verificacion: p.estado_verificacion, codigo_orcob: cobro?.codigo_orcob ?? null }
+  // Mercado Pago: la Pyme paga en su página y vuelve a la app. Si la preferencia falla, el alta entera se deshace.
+  const pago_url = cobro?.canal === 'mercadopago' ? await abrirPagoMp(req.sql, cobro.id, p, plan, u.correo) : null
+  return { id: p.id, estado_verificacion: p.estado_verificacion, codigo_orcob: cobro?.codigo_orcob ?? null, pago_url }
 })
 
+async function abrirPagoMp(sql: Sql, pagoId: string, p: Pyme, plan: Plan, correo: string) {
+  const pref = await crearPreferencia(pagoId, plan, plan.precio_mensual_clp, p.nombre_comercial, correo)
+  await sql('update pagos set referencia = $2 where id = $1', [pagoId, pref.preferencia])
+  return pref.url
+}
+
 // Crea el periodo pendiente y su pago. Por Orcob se emite un código de recaudación; por transferencia se registra la referencia.
-async function registrarPago(sql: Sql, p: Pyme, plan: Plan, inicio: string, canal: 'transferencia' | 'orcob', referencia: string | null) {
+async function registrarPago(sql: Sql, p: Pyme, plan: Plan, inicio: string, canal: CanalPago, referencia: string | null) {
   const fin = new Date(`${inicio}T12:00:00Z`); fin.setUTCDate(fin.getUTCDate() + DIAS_PERIODO)
   const s: Suscripcion = { id: uid(), pyme_id: p.id, plan_id: plan.id, inicio, fin: fin.toISOString().slice(0, 10), estado: 'pendiente' }
   await sql('insert into suscripciones (id, pyme_id, plan_id, inicio, fin, estado) values ($1, $2, $3, $4, $5, $6)', [s.id, s.pyme_id, s.plan_id, s.inicio, s.fin, s.estado])
@@ -290,7 +303,15 @@ on('GET', '/pymes/:id/metricas', async req => {
   const canjes30 = await req.sql<{ sucursal_id: string | null }>('select k.sucursal_id from canjes k join convenios c on c.id = k.convenio_id where c.pyme_id = $1 and k.ocurrido_en > $2', [p.id, desde])
   const items = (await req.sql(`select ${ITEM} from items_catalogo i where i.pyme_id = $1 and i.disponible order by i.creado_en`, [p.id])).map(itemDe)
   const sucursales = nivel === 'avanzadas' ? await req.sql<{ id: string; nombre: string }>('select id, nombre from sucursales where pyme_id = $1 order by creado_en', [p.id]) : []
+  // KPI de negocio (src/shared/kpis.ts): franja horaria, cupones más usados e impacto de las campañas con ONG.
+  const ultimos30 = eventos.filter(e => e.ocurrido_en > desde)
+  const visitasLargas = await req.sql<EventoKpi>("select tipo, ocurrido_en from eventos_pyme where pyme_id = $1 and tipo = 'visita_perfil' and ocurrido_en > $2 order by ocurrido_en, id", [p.id, hace(DIAS_EVENTOS_CAMPANAS)])
+  const convenios = await req.sql<{ id: string; codigo: string; titulo: string; estado: string; desde: string; ong: string }>(`select c.id, c.codigo, c.titulo, c.estado, c.desde, o.nombre as ong
+    from convenios c join ongs o on o.id = c.ong_id where c.pyme_id = $1 and c.estado <> 'rechazado' order by c.creado_en, c.id`, [p.id])
+  const canjes = await req.sql<{ convenio_id: string; ocurrido_en: string }>('select k.convenio_id, k.ocurrido_en from canjes k join convenios c on c.id = k.convenio_id where c.pyme_id = $1', [p.id])
+  const kpis = kpisNegocio(nivel, totales, ultimos30, visitasLargas, convenios, canjes, desde)
   return {
+    ...kpis,
     nivel,
     totales,
     anteriores,
@@ -322,26 +343,41 @@ on('POST', '/pymes/:id/suscripcion', async req => {
   const p = await miPyme(req, 'suscripcion')
   const d = parse(z.object({
     plan_id: z.number().int().positive(),
-    canal: z.enum(['transferencia', 'orcob']).default('transferencia'),
+    canal: z.enum(['transferencia', 'orcob', 'mercadopago']).default('transferencia'),
     // Opcional: la Pyme puede pedir el plan y transferir después de recibir los datos; el asesor confirma el pago.
     referencia_pago: z.string().trim().max(60).optional(),
   }), req.body)
   if (d.canal === 'orcob' && !orcobDisponible()) return fail(422, ORCOB_NO_DISPONIBLE)
+  if (d.canal === 'mercadopago' && !mercadoPagoDisponible()) return fail(422, MERCADO_PAGO_NO_DISPONIBLE)
   if (p.estado_verificacion !== 'aprobada') return fail(422, 'Tu negocio debe estar verificado para renovar o cambiar de plan')
-  if (await pagoPendiente(req.sql, p.id)) return fail(409, 'Ya tienes una solicitud de pago en revisión')
+  const anterior = await pagoPendiente(req.sql, p.id)
+  // Un pago con Mercado Pago que no se completó se reemplaza por la nueva solicitud, salvo que ya se haya pagado.
+  if (anterior?.canal === 'mercadopago' && mercadoPagoDisponible()) {
+    // Si ya estaba pagado se confirma y se responde con éxito: un error desharía la confirmación (la ruta es una transacción).
+    if (await verificarPagoMp(req.sql, anterior.id)) {
+      const s = (await una<Suscripcion>(req.sql, 'select * from suscripciones where id = $1', [anterior.suscripcion_id]))!
+      return { id: s.id, inicio: s.inicio, fin: s.fin, pago_id: anterior.id, codigo_orcob: null, pago_url: null, aviso: PAGO_ANTERIOR_RECIBIDO }
+    }
+    await req.sql("update pagos set estado = 'rechazado' where id = $1", [anterior.id])
+    await req.sql("update suscripciones set estado = 'cancelada' where id = $1 and estado = 'pendiente'", [anterior.suscripcion_id])
+  } else if (anterior) return fail(409, 'Ya tienes una solicitud de pago en revisión')
   const plan = PLANES.find(x => x.id === d.plan_id)
   if (!plan) return fail(400, 'Plan no disponible')
   if (plan.precio_mensual_clp === 0) return fail(422, 'El plan Gratis no requiere pago: rige automáticamente cuando termina tu periodo pagado')
   const actual = await una<Suscripcion>(req.sql, "select * from suscripciones where pyme_id = $1 and estado = 'activa' order by fin desc limit 1", [p.id])
   const inicio = actual && actual.fin > dayOffset(0) ? actual.fin : dayOffset(0)
-  const r = await registrarPago(req.sql, p, plan, inicio, d.canal, d.referencia_pago || null)
-  const aviso = avisoSolicitud('plan', p.nombre_comercial, p.rut_empresa, '', plan.nombre, plan.precio_mensual_clp, d.canal, d.canal === 'transferencia' ? r.referencia : null)
-  await avisarAsesores(req.sql, aviso.asunto, aviso.cuerpo)
+  const r = await registrarPago(req.sql, p, plan, inicio, d.canal, d.canal === 'transferencia' ? d.referencia_pago || null : null)
+  // Mercado Pago se confirma solo: el equipo no tiene nada que revisar.
+  if (d.canal !== 'mercadopago') {
+    const aviso = avisoSolicitud('plan', p.nombre_comercial, p.rut_empresa, '', plan.nombre, plan.precio_mensual_clp, d.canal, d.canal === 'transferencia' ? r.referencia : null)
+    await avisarAsesores(req.sql, aviso.asunto, aviso.cuerpo)
+  }
   if (d.canal === 'transferencia') {
     const c = correoSolicitudPlan(p.nombre_comercial, plan.nombre, plan.precio_mensual_clp, !!r.referencia)
     await enviarCorreo(req.sql, await correoDe(req.sql, p.propietario_id), c.asunto, c.cuerpo, 'cobranza')
   }
-  return { id: r.suscripcion.id, inicio: r.suscripcion.inicio, fin: r.suscripcion.fin, pago_id: r.id, codigo_orcob: r.codigo_orcob }
+  const pago_url = d.canal === 'mercadopago' ? await abrirPagoMp(req.sql, r.id, p, plan, await correoDe(req.sql, p.propietario_id)) : null
+  return { id: r.suscripcion.id, inicio: r.suscripcion.inicio, fin: r.suscripcion.fin, pago_id: r.id, codigo_orcob: r.codigo_orcob, pago_url }
 })
 
 // Demostración del aviso (webhook) de Orcob: confirma el pago y activa el periodo sin intervención del asesor.

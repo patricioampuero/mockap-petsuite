@@ -85,7 +85,7 @@ PetSuite dejó de ser solo una demostración. La demo, con el mock y la clave `p
 - Reenviar la confirmación y recuperar la contraseña responden lo mismo exista o no la cuenta.
 - Los textos, plazos y mensajes de las cuentas están en `src/shared/cuentas.ts`, compartido por el mock, el API y el frontend.
 - Los botones de cuentas de prueba y «Datos de demostración» solo aparecen en la demo (`modoDemo`, sin `VITE_API_URL`).
-- Orcob está simulado: solo funciona en la demo y en el API con `ORCOB_SIMULADO=1` (pruebas). En la versión real los planes se pagan por transferencia, que confirma un asesor; los datos de la cuenta van en `DATOS_TRANSFERENCIA` (`src/shared/pagos.ts`).
+- Orcob está simulado: solo funciona en la demo y en el API con `ORCOB_SIMULADO=1` (pruebas). En la versión real los planes se pagan con Mercado Pago (con `MP_ACCESS_TOKEN` en Vercel; se confirma solo, al volver a consultar el pago a Mercado Pago) o por transferencia, que confirma un asesor; los datos de la cuenta van en `DATOS_TRANSFERENCIA` (`src/shared/pagos.ts`). Mercado Pago no existe en la demo.
 
 ### Verificación antes de terminar
 
@@ -1068,3 +1068,101 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - Simulación de la carga contra la base real (12 nuevas, 0 repetidas) y luego la carga.
   - `GET https://www.petsuite.space/api/v1/pymes` devuelve las 12 con `sin_reclamar: true`.
   - En Chromium sobre `www.petsuite.space`: Explorar en Puerto Montt a 1366 px muestra 8 tarjetas en gris y 3 pines punteados, y en Osorno a 390 px muestra 4. Sin errores de JavaScript ni desplazamiento horizontal.
+
+## 2026-11-13
+
+### Documentos de validación de los negocios
+
+- Fecha: 2026-11-13.
+- Rama: `patricioampuero/documentos-validacion-locales`, creada desde `origin/main` (después de «Subida de imagenes»).
+- Archivos agregados: `src/shared/documentos.ts`, `src/shared/archivos.ts`, `src/mock/documentos.ts`, `backend/api/documentos.ts`, `backend/api/documentos.test.mjs`, `backend/db/migrations/009_documentos_pyme.sql`, `src/modules/business/business-documents.tsx` y `src/modules/admin/admin-documents.tsx`.
+- Archivos modificados:
+  - API: `backend/api/index.ts`, `backend/api/admin.ts`, `backend/api/pymes.ts`, `backend/http.mjs` y `backend/db/seed.mjs`.
+  - Mock: `src/mock/server.ts` y `src/mock/db.ts` (clave `petsuite-mock-db-v8`).
+  - Interfaz: `src/App.tsx`, `src/modules/business/business.tsx`, `src/modules/admin/admin.tsx`, `src/modules/directory/explore-search.ts` (texto del sello), `src/shared/fotos.ts` y `src/styles/design-pro.css`.
+  - Otros: `backend/api/paridad.test.mjs`, `package.json` y `Agents.md`.
+- Cambio realizado:
+  - **Qué se pide.** Patente comercial y resolución sanitaria a todos los negocios, y la constitución de la sociedad solo si el RUT es de empresa (desde 50.000.000). Un documento por tipo, en PDF, JPG o PNG de hasta 2 MB. Es lo que pidió el profesor en la revisión de la presentación.
+  - **Mi negocio → Documentos.** El negocio sube cada archivo, ve su estado (sin subir, en revisión, aprobado o por corregir) y el motivo si el asesor pidió corregirlo. Una foto del documento se reduce en el teléfono (lado mayor de 2000 px) y pierde los datos de la cámara. El Inicio y el alta avisan qué falta.
+  - **Asesor.** En Pymes y suscripciones, cada alta muestra qué documentos faltan y «Revisar documentos»: descarga cada archivo, lo aprueba o pide corrección con un motivo que le llega al negocio por correo. Cuando un alta completa sus documentos obligatorios, el equipo recibe un aviso.
+  - **Regla.** Un alta (`pendiente`) no se puede aprobar con documentos obligatorios faltantes o rechazados: responde 422 con la lista. Al aprobarla, los documentos en revisión quedan aprobados por quien aprobó. Reactivar un negocio suspendido no los exige.
+  - **Privacidad.** Los archivos se guardan en la base (`documentos_pyme`, con RLS), nunca se publican y solo los descargan el negocio y el equipo. El servidor revisa la firma real del archivo, no solo el tipo declarado. La descarga sale como adjunto con `Cache-Control: private, no-store`.
+  - **Cuerpo HTTP.** El límite general sigue en 1 MB; solo `PUT /pymes/:id/documentos/:tipo` acepta hasta 3 MB (2 MB en base64).
+  - **Sello.** «Validado por PetSuite» dice ahora que se revisaron la patente, la resolución sanitaria y, si corresponde, la constitución.
+  - En la demo, un archivo de más de 300 KB queda registrado sin su contenido, porque todo se guarda en el navegador.
+- Motivo: en la revisión de la presentación el profesor preguntó cómo se valida que un local es real y pidió exigir resolución sanitaria, patente comercial y acta de constitución.
+- Pendiente:
+  - Aplicar las migraciones 008 (fotos, ya fusionada en `main`) y 009 en la base real: `node --env-file=.env.production.local backend/db/migrate.mjs`. Desde esta sesión el permiso fue denegado.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 51 de 51. `documentos.test.mjs` (nuevo) comprueba las reglas compartidas y, sobre el servidor HTTP con PGlite, un PDF de 1,5 MB que entra, uno de más de 2 MB que responde 413, el límite de 1 MB en las demás rutas, la descarga como adjunto privado y el 401/403 para quien no corresponde.
+  - La paridad suma 30 pasos de documentos (subida, firma falsa, tipo inexistente, cuenta ajena, descarga, rechazo con motivo, aprobación bloqueada y luego permitida) con las mismas respuestas en ambos backends.
+  - Revisión en Chromium con la build real (`VITE_API_URL`) contra el API real sobre PGlite migrado: Documentos del negocio y la revisión del asesor a 1366 y 390 px, en claro y oscuro. Sin errores de JavaScript ni desplazamiento horizontal.
+### Pago de los planes con Mercado Pago
+
+- Fecha: 2026-11-13.
+- Rama: `patricioampuero/pago-mercado-pago`, creada sobre `patricioampuero/documentos-validacion-locales`. Se fusiona después de ella.
+- Archivos agregados: `backend/api/mercadopago.ts`, `backend/api/mercadopago.test.mjs` y `backend/db/migrations/010_pago_mercadopago.sql`.
+- Archivos modificados:
+  - API: `backend/api/pymes.ts`, `backend/api/admin.ts` y `backend/api/index.ts`.
+  - Compartidos: `src/shared/pagos.ts` y `src/shared/limites.ts`.
+  - Mock: `src/mock/server.ts` y `src/mock/db.ts`.
+  - Interfaz: `src/App.tsx`, `src/modules/business/business.tsx` y `src/modules/admin/admin.tsx`.
+  - Otros: `backend/api/paridad.test.mjs`, `backend/README.md` (sección «Pagos con Mercado Pago»), `package.json` y `Agents.md` (regla de pagos).
+- Cambio realizado:
+  - **Checkout Pro.** Con `MP_ACCESS_TOKEN` en el API, el alta y el cambio de plan ofrecen Mercado Pago como medio sugerido, además de la transferencia. El API crea una preferencia con el monto del plan en CLP, `external_reference` = id del pago en PetSuite, vencimiento a 3 días, regreso a `APP_URL?pago=mercadopago` y aviso a `/api/v1/pagos/mercadopago/webhook` (solo con `APP_URL` https). Con un token `TEST-` abre el checkout de prueba.
+  - **Confirmación.** El webhook (`POST /pagos/mercadopago/webhook`, público, con límite de 300 por cliente y hora) y la verificación al volver (`POST /pymes/:id/pagos/:pagoId/mercadopago/verificar`) consultan el pago a Mercado Pago con el token. Solo activan el plan si está aprobado, por el monto exacto y en CLP: un aviso falso no activa nada. Un aviso repetido no hace nada. La Pyme recibe un correo.
+  - **Reintento y reemplazo.** `POST /pymes/:id/pagos/:pagoId/mercadopago` abre una preferencia nueva si la Pyme cerró la ventana. Pedir otro plan o pagar por transferencia reemplaza un pago sin completar, salvo que ya estuviera pagado: entonces se confirma y la respuesta lo avisa (no es un error, porque un error desharía la confirmación).
+  - **Asesor.** No confirma a mano un pago de Mercado Pago (409): solo puede cancelar la solicitud. Aprobar un alta no activa un periodo que espera el pago de Mercado Pago. Un cambio de plan con Mercado Pago no avisa al equipo, porque no tiene nada que revisar.
+  - **Regreso a la app.** `App.tsx` detecta `?pago=mercadopago`, lo quita de la barra y lleva a la Pyme a Suscripción, que revisa el último pago con Mercado Pago.
+  - **`GET /pagos/medios`** dice si Mercado Pago está disponible. Sin `MP_ACCESS_TOKEN` (y en la demo), la app sigue igual que antes: solo transferencia.
+  - **Migración 010**: `pagos.canal` acepta `mercadopago`.
+- Motivo: en la revisión el profesor dijo que pagar con una solicitud y una transferencia «no es muy profesional» y pidió integrar Mercado Pago con su API de prueba.
+- Pendiente:
+  - Crear la aplicación en Mercado Pago Developers y poner su Access Token de prueba en `MP_ACCESS_TOKEN` (Vercel, solo Production). Los pasos están en `backend/README.md`.
+  - Aplicar la migración 010 en la base real antes de fusionar.
+  - No se valida la firma `x-signature` del webhook, porque el enrutador no recibe las cabeceras. No hace falta para la seguridad: el pago siempre se vuelve a consultar a Mercado Pago.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 52 de 52. `mercadopago.test.mjs` (nuevo) usa un Mercado Pago simulado en `MP_API_URL` y comprueba la preferencia (monto, CLP, referencia, regreso, aviso y vencimiento), que el webhook ignora pagos pendientes, de otro monto o en otra moneda, la activación y su correo, el aviso repetido, el 409 del asesor, el reemplazo, la verificación al volver, el reintento, la confirmación de un pago anterior ya pagado y que sin token no se ofrece.
+  - La paridad suma los pasos de Mercado Pago sin token, con las mismas respuestas en ambos backends.
+  - En Chromium, con la build real contra el API real sobre PGlite y un Mercado Pago simulado que aprueba: elegir Plata y luego Oro, «Ir a pagar», volver a la app y ver la confirmación en Suscripción, a 1366 px en claro y a 390 px en oscuro. Sin errores de JavaScript ni desplazamiento horizontal.
+### KPI de negocio en Métricas y en el Inicio del administrador
+
+- Fecha: 2026-11-13.
+- Rama: `patricioampuero/kpi-negocio`, creada sobre `patricioampuero/pago-mercado-pago`. Se fusiona después de ella.
+- Archivos agregados: `src/shared/kpis.ts` y `src/shared/kpis.test.mjs`.
+- Archivos modificados: `backend/api/pymes.ts`, `backend/api/admin.ts`, `src/mock/server.ts`, `src/modules/business/business.tsx`, `src/modules/admin/admin.tsx`, `src/styles/design-pro.css`, `backend/api/paridad.test.mjs`, `package.json` y `Agents.md`.
+- Cambio realizado:
+  - **Métricas del negocio** (`GET /pymes/:id/metricas`) suma KPI orientados a decisiones:
+    - tasa de contacto: porcentaje de visitas que terminan en un clic para llamar o escribir por WhatsApp;
+    - visitas por franja horaria (madrugada, mañana, tarde y noche) y la hora con más visitas, en hora de Chile (desde el plan Plata);
+    - cupones más usados: canjes de cada código en los últimos 30 días;
+    - impacto de cada campaña con una ONG: visitas en los días siguientes al inicio del convenio comparadas con los mismos días anteriores (hasta 14), con su variación y sus canjes. Se miden las campañas activas o terminadas que empezaron hace menos de 90 días.
+  - **Inicio del administrador** (`GET /admin/resumen`, campo `kpis`): visitas a negocios, tasa de contacto y cupones canjeados de toda la plataforma en 30 días, más los negocios más visitados y las ONG con más canjes.
+  - Los cálculos están en `src/shared/kpis.ts`, que usan el mock y el API, así que ambos entregan las mismas cifras.
+- Motivo: en la revisión, el profesor dijo que los indicadores de la presentación (carga del QR, privacidad, disponibilidad) son SLA y no KPI, y pidió KPI de negocio en tarjetas: visitas por local, productos más vistos, franja horaria, códigos más usados y el impacto de las campañas con ONG, que son los aliados estratégicos.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 57 de 57. `kpis.test.mjs` (nuevo) prueba con horas fijas la hora de Chile en verano e invierno, las franjas, la hora con más visitas, la tasa de contacto, el impacto de una campaña, el orden de los cupones y el ranking con empates.
+  - La paridad compara las métricas y el resumen en ambos backends. La franja horaria y la hora con más visitas se comparan solo por forma, porque dependen de la hora a la que corre cada backend.
+  - En Chromium, con la build real contra el API real sobre PGlite: Métricas de la veterinaria (Oro) y el Inicio del administrador, a 1366 px en claro y a 390 px en oscuro. Sin errores de JavaScript ni desplazamiento horizontal.
+### Ajustes de la revisión: animal prioritario, teléfono visible, motivo de la búsqueda e indexación
+
+- Fecha: 2026-11-13.
+- Rama: `patricioampuero/ajustes-revision-profesor`, creada sobre `patricioampuero/kpi-negocio`. Se fusiona después de ella.
+- Archivos agregados: `backend/db/migrations/011_animal_prioritario.sql`, `src/shared/prioridad.ts`, `public/robots.txt` y `public/sitemap.xml`.
+- Archivos modificados: `backend/api/adopcion.ts`, `src/mock/server.ts`, `src/mock/db.ts`, `src/modules/ong/adoption.tsx`, `src/modules/directory/public-business.tsx`, `src/modules/directory/explore.tsx`, `src/modules/directory/explore-search.ts`, `src/modules/directory/explore-search.test.mjs`, `src/styles/design-pro.css`, `index.html`, `backend/api/paridad.test.mjs` y `Agents.md`.
+- Cambio realizado:
+  - **Animal prioritario.** Cada ONG puede destacar un solo animal disponible (`PUT /ong/animales/:id/prioridad`). Marcar a otro le quita la prioridad al anterior, y adoptarlo también se la quita. Aparece primero en Adopciones con la etiqueta «Prioritario». La migración 011 agrega la columna y un índice único que impide dos por ONG.
+  - **Teléfono visible.** El perfil público muestra el número junto a la dirección y en el botón «Llamar al …». Antes solo había un botón «Llamar», que en un computador no muestra nada.
+  - **Por qué aparece un negocio.** Cuando la búsqueda coincide con un servicio y no con el nombre o el rubro, la tarjeta de Explorar dice «Coincide con «Peluquería clínica (Sucursal Rahue)»» (`coincidencia` en `explore-search.ts`).
+  - **Indexación en Google.** `index.html` tiene título y descripción con lo que se busca (veterinarias, tiendas y peluquerías de Los Lagos) y etiquetas Open Graph. `robots.txt` deja fuera `/api/` y apunta a `sitemap.xml`.
+- Motivo: en la revisión el profesor preguntó cuántos animales puede priorizar una ONG («si todos los marcan como prioridad…»), buscó el teléfono del local y no lo encontró, preguntó por qué una clínica aparecía al buscar «cortes» y pidió indexar el sitio en Google.
+- Pendiente:
+  - Aplicar la migración 011 en la base real antes de fusionar.
+  - Registrar `https://www.petsuite.space/` en Google Search Console y enviar el sitemap (requiere la cuenta de Google del dueño del dominio). Los perfiles de cada negocio usan `#local/<id>` y Google no los indexa por separado: haría falta pasar a rutas con `/`.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 58 de 58. `explore-search.test.mjs` suma el motivo de la coincidencia. La paridad suma la prioridad: marcar, cambiar, animal en proceso (422), animal de otra ONG (404), dato inválido (400), tutor (403) y quitar.
+  - En Chromium, con la build real contra el API real sobre PGlite: «cortes» en Explorar, el perfil de la clínica con su teléfono y la prioridad en «Mis animales» y en Adopciones, a 1366 px en claro y a 390 px en oscuro. Sin errores de JavaScript ni desplazamiento horizontal.

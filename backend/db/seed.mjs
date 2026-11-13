@@ -68,6 +68,8 @@ async function filas(db) {
     ['correos', db.correos],
     ['solicitudes_privacidad', db.solicitudes_privacidad],
     ['imagenes', db.imagenes.map(i => ({ ...i, datos: Buffer.from(i.datos, 'base64') }))],
+    // En la demo, un documento grande se guarda sin su contenido: en la base queda un byte, para respetar la restricción.
+    ['documentos_pyme', (db.documentos ?? []).map(d => ({ ...d, datos: d.datos ? Buffer.from(d.datos, 'base64') : Buffer.alloc(1) }))],
   ]
 }
 
