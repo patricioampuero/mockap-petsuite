@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom'
 import QRCode from 'qrcode'
 import { Bookmark, BookmarkCheck, CalendarDays, Check, CirclePlus, Heart, MapPin, MessageCircle, PawPrint, Pencil, Printer, Search, ThumbsUp, Trash2, TriangleAlert, Users, X } from 'lucide-react'
 import { api, errorText, fechaCorta, getSession, hoy, iniciales, type Comuna, type Mascota } from '../../shared/api'
-import { Photo } from '../../shared/media'
+import { assetUrl, Photo } from '../../shared/media'
+import { FotoOpcional } from '../../shared/foto-editable'
+import type { FotoSubida } from '../../shared/fotos'
 import { moderationMessageSchema } from '../../shared/validators'
 import { BannerStrip } from '../promotions/promotions'
 import { EmptyState, ErrorState, LoadingState } from '../../shared/feedback'
@@ -152,10 +154,13 @@ function Composer({ post, initialType = 'recomendacion', onClose, onSaved }: { p
   useModalFocus(onClose, post ? 'textarea' : 'select')
   const [form, setForm] = useState({ tipo: post?.tipo || initialType, texto: post?.texto || '', mascota_id: '', sector: post?.sector || '', fecha_evento: post?.fecha_evento || '' })
   const [pets, setPets] = useState<Mascota[]>([])
+  // Foto opcional: se sube al elegirla y la publicación envía su id. En un extravío reemplaza a la foto de la mascota.
+  const [foto, setFoto] = useState<FotoSubida | null>(null)
   const [error, setError] = useState('')
   const [errorField, setErrorField] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => { if (!post) api<Mascota[]>('/mascotas').then(setPets).catch(() => undefined) }, [post])
+  const mascotaElegida = form.tipo === 'extravio' ? pets.find(p => p.id === form.mascota_id) : undefined
   const conSector = form.tipo !== 'recomendacion' && form.tipo !== 'adopcion'
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -165,7 +170,7 @@ function Composer({ post, initialType = 'recomendacion', onClose, onSaved }: { p
     const campos = { texto: form.texto.trim(), ...(conSector && form.sector.trim() && { sector: form.sector.trim() }), ...(form.tipo === 'evento' && { fecha_evento: form.fecha_evento }) }
     try {
       if (post) await api(`/muro/${post.id}`, { method: 'PATCH', body: campos })
-      else await api('/muro', { method: 'POST', body: { tipo: form.tipo, ...campos, ...(form.mascota_id && form.tipo === 'extravio' ? { mascota_id: form.mascota_id } : {}) } })
+      else await api('/muro', { method: 'POST', body: { tipo: form.tipo, ...campos, ...(form.mascota_id && form.tipo === 'extravio' ? { mascota_id: form.mascota_id } : {}), ...(foto && { imagen_id: foto.id }) } })
       await onSaved()
     } catch (e) { setError(errorText(e)); setErrorField(''); setBusy(false) }
   }
@@ -175,10 +180,11 @@ function Composer({ post, initialType = 'recomendacion', onClose, onSaved }: { p
       {conSector && <label>Sector o referencia<input maxLength={80} value={form.sector} onChange={e => setForm({ ...form, sector: e.target.value })} placeholder="Ej. Plaza de Armas, sin dirección exacta" /></label>}
       {form.tipo === 'evento' && <label>Fecha del evento<input id="wall-date" type="date" min={hoy()} value={form.fecha_evento} aria-invalid={errorField === 'fecha'} aria-describedby={errorField === 'fecha' ? 'wall-field-error' : undefined} onChange={e => { setForm({ ...form, fecha_evento: e.target.value }); if (errorField === 'fecha') { setError(''); setErrorField('') } }} /></label>}</div>
     <label className="composer-label">Descripción<textarea id="wall-text" rows={5} maxLength={1000} value={form.texto} aria-invalid={errorField === 'texto'} aria-describedby={errorField === 'texto' ? 'wall-field-error' : undefined} onChange={e => { setForm({ ...form, texto: e.target.value }); setError(''); setErrorField('') }} /></label>
+    {!post && <div className="composer-photo"><span className="composer-photo-label">Foto <small>(opcional)</small></span><FotoOpcional foto={foto} onChange={setFoto} />{!foto && mascotaElegida?.foto_url && <small className="muted">Si no eliges una, se usa la foto de {mascotaElegida.nombre}.</small>}</div>}
     {error && <div className="form-error" id={errorField ? 'wall-field-error' : undefined} role={errorField ? undefined : 'alert'}>{error}</div>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancelar</button><button className="primary" disabled={busy}>{busy ? 'Guardando...' : post ? 'Guardar cambios' : 'Publicar'}</button></div></form></div>
 }
 
-const posterPhotoUrl = (src?: string | null) => src?.startsWith('/') ? `${import.meta.env.BASE_URL}${src.slice(1)}` : src || ''
+const posterPhotoUrl = (src?: string | null) => src ? assetUrl(src) : ''
 const posterQrUrl = (token: string) => `${window.location.origin}${import.meta.env.BASE_URL}#qr/${token}`
 
 function LostPosterModal({ post, petId, onClose }: { post: Post; petId?: string; onClose: () => void }) {

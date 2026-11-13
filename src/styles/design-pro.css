@@ -865,3 +865,30 @@ body:has(.public-site) { min-width: 0; }
 @media (max-width: 480px) {
   .settings-card-heading .profile-avatar { display: none; }
 }
+
+/* Fotos subidas: productos del catálogo, animales de la ONG, publicaciones del muro y portada de la ONG */
+.catalog-item > .pet-photo-editor { align-self: flex-start; }
+.pet-photo.catalog-photo { width: 72px; height: 72px; border-radius: var(--radius-md); font-size: 1rem; }
+.catalog-item .pet-photo-editor label.pet-photo-change { min-height: 28px; padding: 2px 10px; font-size: 0.74rem; }
+.product-row.con-foto { grid-template-columns: 56px minmax(0, 1fr) auto; }
+.pet-photo.product-photo { width: 56px; height: 56px; border-radius: var(--radius-sm, 8px); }
+.composer-photo { display: grid; gap: 8px; margin: 4px 0 14px; }
+.composer-photo-label { font-size: 0.86rem; font-weight: 700; color: var(--color-text-primary); }
+.composer-photo-label small { font-weight: 500; color: var(--color-text-muted); }
+.photo-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.photo-picker-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.pet-photo.photo-picker-preview { width: 112px; height: 84px; border-radius: var(--radius-md); }
+.photo-picker .form-error { flex-basis: 100%; margin: 0; font-size: 0.8rem; }
+.ong-cover.has-photo { width: 100%; height: clamp(150px, 26vw, 260px); margin-bottom: 14px; border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+@media (max-width: 600px) {
+  .product-row.con-foto { grid-template-columns: 48px minmax(0, 1fr) auto; }
+  .pet-photo.product-photo { width: 48px; height: 48px; }
+  .pet-photo.catalog-photo { width: 60px; height: 60px; }
+}
+/* Dentro de un formulario, la etiqueta de la foto sigue siendo un botón (no una etiqueta de campo). */
+.photo-picker label.pet-photo-change, .pet-photo-editor label.pet-photo-change { display: inline-flex; gap: 6px; font-size: 0.8rem; font-weight: 750; color: var(--color-text-primary); }
+/* Tarjetas con foto y varias acciones (animales de la ONG): el texto conserva su ancho y las acciones bajan si no caben. */
+.catalog-item:has(> .pet-photo-editor) { flex-wrap: wrap; }
+.catalog-item:has(> .pet-photo-editor) > .catalog-item-main { flex: 1 1 260px; min-width: 0; }
+.catalog-item:has(> .pet-photo-editor) > .qr-actions { flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; }
+.catalog-item:has(> .pet-photo-editor) > .qr-actions > button { white-space: nowrap; }

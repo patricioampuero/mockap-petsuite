@@ -14,6 +14,7 @@
 import { pathToFileURL } from 'node:url'
 import { createPool } from './pool.mjs'
 import { datosDemo, filas, insertar } from './seed.mjs'
+import { poblarDemo } from './demo-poblar.mjs'
 import { DOMINIO_DEMO, SUFIJO_DEMO } from '../../src/shared/demo.ts'
 
 const ROLES_EXCLUIDOS = new Set(['admin', 'asesor'])
@@ -23,10 +24,12 @@ const uid = () => crypto.randomUUID()
 
 /** Transforma la demo del mock en datos aptos para la base real. Devuelve las filas por tabla y las cuentas. */
 export async function prepararDemo(db, clave) {
+  // Más tutores, negocios, ONG, animales y vida en el muro, con fotos guardadas en la base (backend/db/demo-poblar.mjs).
+  poblarDemo(db)
   const excluidos = new Set(db.usuarios.filter(u => ROLES_EXCLUIDOS.has(u.rol)).map(u => u.id))
   const correos = new Map(db.usuarios.map(u => [u.correo, u.correo.replace(/@.*$/, `@${DOMINIO_DEMO}`)]))
   db.usuarios = db.usuarios.filter(u => !excluidos.has(u.id)).map(u => ({ ...u, correo: correos.get(u.correo), clave }))
-  for (const p of db.pymes) Object.assign(p, { nombre_comercial: p.nombre_comercial + SUFIJO_DEMO, descripcion: `Negocio ficticio para la demostración de PetSuite. ${p.descripcion ?? ''}`.trim() })
+  for (const p of db.pymes) p.nombre_comercial += SUFIJO_DEMO
   for (const o of db.ongs) Object.assign(o, { nombre: o.nombre + SUFIJO_DEMO, contacto: correos.get(o.contacto) ?? o.contacto })
   // En la versión real no hay Orcob: los pagos de la demo figuran como transferencias.
   for (const pg of db.pagos) if (pg.canal === 'orcob') Object.assign(pg, { canal: 'transferencia', codigo_orcob: null, referencia: 'DEMO' })

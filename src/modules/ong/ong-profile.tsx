@@ -5,11 +5,14 @@ import { LogoMark, Photo } from '../../shared/media'
 import { CouponList } from '../promotions/promotions'
 import { EmptyState, ErrorState, LoadingState } from '../../shared/feedback'
 import { ShareButton } from '../../shared/share'
+import { FotoOpcional } from '../../shared/foto-editable'
 
 export type OngPerfil = {
   mision: string; como_ayudar: string; necesidades: string[]; voluntariado: string; horario_visitas: string
   donaciones: { banco: string; tipo_cuenta: string; numero: string; titular: string; rut: string; correo: string } | null
   emblema: 'heart' | 'paw' | 'home' | 'shield'; color: 'acento' | 'calido' | 'info' | 'vino'
+  /** Foto de portada subida por la ONG; sin ella, el perfil muestra solo su emblema. */
+  foto_portada?: string | null
 }
 type Publica = { id: string; nombre: string; tipo: string; comuna: string; descripcion: string | null; contacto: string | null; redes_sociales: string | null; perfil: OngPerfil | null; animales: { id: string; nombre: string; especie: string; foto_url: string | null; edad_estimada: string | null }[]; cupones: CuponPublico[]; impacto: { canjes_mes: number; canjes_total: number; aliados: number } }
 
@@ -27,7 +30,7 @@ function LeerMas({ texto }: { texto: string }) {
 
 function OngHero({ nombre, sub, perfil }: { nombre: string; sub: string; perfil: OngPerfil }) {
   const Icon = emblemas[perfil.emblema]
-  return <div className={`ong-hero tone-${perfil.color}`}><span className="ong-emblem"><Icon size={30} strokeWidth={1.7} /></span><div><p className="eyebrow">{sub}</p><h1>{nombre}</h1><LeerMas texto={perfil.mision || 'Cuenta aquí la misión de tu organización.'} /></div></div>
+  return <>{perfil.foto_portada && <Photo src={perfil.foto_portada} nombre={nombre} className="ong-cover" />}<div className={`ong-hero tone-${perfil.color}`}><span className="ong-emblem"><Icon size={30} strokeWidth={1.7} /></span><div><p className="eyebrow">{sub}</p><h1>{nombre}</h1><LeerMas texto={perfil.mision || 'Cuenta aquí la misión de tu organización.'} /></div></div></>
 }
 
 function PerfilBody({ perfil, contacto, redes }: { perfil: OngPerfil; contacto?: string | null; redes?: string | null }) {
@@ -41,7 +44,7 @@ function PerfilBody({ perfil, contacto, redes }: { perfil: OngPerfil; contacto?:
   </div></section>
 }
 
-// CMS: la ONG arma su perfil público sin subir imágenes. Lo que guarda es un borrador; se publica cuando el asesor lo aprueba.
+// CMS: la ONG arma su perfil público, con una portada opcional. Lo que guarda es un borrador; se publica cuando el asesor lo aprueba.
 export function OngProfileEditor() {
   const [data, setData] = useState<{ nombre: string; estado_verificacion: string; publicado: OngPerfil | null; borrador: OngPerfil | null; estado: keyof typeof estadoPerfil; motivo: string | null } | null>(null)
   const [form, setForm] = useState<OngPerfil>(vacio)
@@ -63,10 +66,11 @@ export function OngProfileEditor() {
     } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
   }
    if (!data) return <section className="page">{error ? <ErrorState message={error} onRetry={() => void load()} /> : <LoadingState label="Cargando perfil de ONG" />}</section>
-  return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">CMS DE TU ORGANIZACIÓN</p><h1>Perfil público</h1><p className="muted">Arma tu página sin subir imágenes: misión, necesidades, cómo donar y voluntariado. Un asesor revisa los cambios antes de publicarlos para proteger a quienes donan.</p></div><span className={`user-status ${data.estado === 'publicado' ? 'activo' : 'suspendido'}`}>{estadoPerfil[data.estado]}</span></div>
+  return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">CMS DE TU ORGANIZACIÓN</p><h1>Perfil público</h1><p className="muted">Arma tu página: foto de portada, misión, necesidades, cómo donar y voluntariado. Un asesor revisa los cambios antes de publicarlos para proteger a quienes donan.</p></div><span className={`user-status ${data.estado === 'publicado' ? 'activo' : 'suspendido'}`}>{estadoPerfil[data.estado]}</span></div>
     {data.motivo && <div className="alert-card warn"><div><strong>Observaciones del asesor</strong><p>{data.motivo}</p></div></div>}
     {data.estado_verificacion !== 'aprobada' && <div className="alert-card"><div><strong>Tu organización aún no está verificada</strong><p>Puedes preparar el perfil; se publicará cuando el equipo te verifique.</p></div></div>}
     <div className="ong-editor"><div className="settings-card"><div className="form-grid"><label>Emblema<select value={form.emblema} onChange={e => set('emblema', e.target.value as OngPerfil['emblema'])}><option value="heart">Corazón</option><option value="paw">Huella</option><option value="home">Hogar</option><option value="shield">Escudo</option></select></label><label>Color<select value={form.color} onChange={e => set('color', e.target.value as OngPerfil['color'])}><option value="acento">Principal</option><option value="calido">Cálido</option><option value="info">Azul</option><option value="vino">Vino</option></select></label></div>
+      <div className="composer-photo"><span className="composer-photo-label">Foto de portada <small>(opcional: tu equipo, tu refugio o tus animales)</small></span><FotoOpcional foto={form.foto_portada ? { id: '', url: form.foto_portada } : null} onChange={f => set('foto_portada', f?.url ?? null)} texto="Agregar portada" nombre="la portada" /></div>
       <label className="composer-label">Misión<textarea rows={3} maxLength={600} value={form.mision} onChange={e => set('mision', e.target.value)} /></label>
       <label className="composer-label">Cómo ayudar<textarea rows={3} maxLength={600} value={form.como_ayudar} onChange={e => set('como_ayudar', e.target.value)} /></label>
       <label className="composer-label">Necesidades (separadas por comas)<input value={necesidades} onChange={e => setNecesidades(e.target.value)} placeholder="Alimento para cachorros, Mantas" /></label>

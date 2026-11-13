@@ -25,11 +25,11 @@ export type Sucursal = {
 export type Miembro = { id: string; pyme_id: string; usuario_id: string; rol: 'jefe_local' | 'clinico'; sucursal_id: string | null; permisos: ModuloPyme[]; creado_en: string }
 export type Item = {
   id: string; pyme_id: string; tipo: 'producto' | 'servicio'; nombre: string; descripcion: string | null; precio_referencial_clp: number | null
-  disponible: boolean; categoria: string | null; sin_stock: boolean; oferta: Oferta | null; creado_en: string
+  disponible: boolean; categoria: string | null; sin_stock: boolean; oferta: Oferta | null; foto_url: string | null; creado_en: string
 }
 export type Cupon = { codigo: string; titulo: string; descuento_pct: number; condiciones: string; hasta: string; ong: string; ong_id: string; negocio: string; pyme_id: string }
 
-export const ITEM = 'i.id, i.pyme_id, i.tipo, i.nombre, i.descripcion, i.precio_referencial_clp, i.disponible, i.categoria, i.sin_stock, i.oferta_precio_clp, i.oferta_desde, i.oferta_hasta, i.creado_en'
+export const ITEM = 'i.id, i.pyme_id, i.tipo, i.nombre, i.descripcion, i.precio_referencial_clp, i.disponible, i.categoria, i.sin_stock, i.oferta_precio_clp, i.oferta_desde, i.oferta_hasta, i.foto_url, i.creado_en'
 // En la base la oferta son tres columnas; el API la entrega como el objeto del mock.
 export function itemDe({ oferta_precio_clp, oferta_desde, oferta_hasta, ...i }: Row): Item {
   return { ...i, oferta: oferta_precio_clp == null ? null : { precio_clp: oferta_precio_clp, desde: oferta_desde, hasta: oferta_hasta } } as Item

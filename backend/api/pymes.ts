@@ -12,6 +12,7 @@ import { documentosDe } from './documentos'
 import { DIAS_EVENTOS_CAMPANAS, kpisNegocio, type EventoKpi } from '../../src/shared/kpis'
 import { avisoSolicitud, correoSolicitudPlan, MERCADO_PAGO_NO_DISPONIBLE, ORCOB_NO_DISPONIBLE, PAGO_ANTERIOR_RECIBIDO, SOLO_ORCOB_CONFIRMA, type CanalPago } from '../../src/shared/pagos'
 import { crearPreferencia, mercadoPagoDisponible, verificarPagoMp } from './mercadopago'
+import { fotoPropia, liberarImagen } from './imagenes'
 import {
   cargarVitrina, EN_VITRINA, estadoPlanDe, exigirCupo, ITEM, itemDe, itemsPublicosDe, miPyme, ofertaVigente, permisosEnPyme, planDe, PYME, pymeResumen, pymeResumenDe,
   suscripcionesDe, ultimaDe, usoPyme, type Item, type Pyme, type Suscripcion,
@@ -126,7 +127,7 @@ on('GET', '/pymes/:id', async req => {
   const v = await cargarVitrina(req.sql, [p])
   // Las ofertas se muestran solo mientras están vigentes (y dentro del cupo del plan), y primero.
   const catalogo = itemsPublicosDe(v.items.get(p.id) ?? [], estadoPlanDe(v.subs.get(p.id) ?? []).plan)
-    .map(i => ({ id: i.id, tipo: i.tipo, nombre: i.nombre, descripcion: i.descripcion, precio_referencial_clp: i.precio_referencial_clp, categoria: i.categoria, sin_stock: i.sin_stock, oferta: ofertaVigente(i.oferta) ? i.oferta : null }))
+    .map(i => ({ id: i.id, tipo: i.tipo, nombre: i.nombre, descripcion: i.descripcion, precio_referencial_clp: i.precio_referencial_clp, categoria: i.categoria, sin_stock: i.sin_stock, oferta: ofertaVigente(i.oferta) ? i.oferta : null, foto_url: i.foto_url ?? null }))
     .sort((a, b) => Number(!!b.oferta) - Number(!!a.oferta) || (a.categoria ?? '').localeCompare(b.categoria ?? '') || a.nombre.localeCompare(b.nombre))
   return { ...pymeResumenDe(p, v), catalogo }
 })
@@ -223,12 +224,12 @@ function validarOferta(precio: number | null, oferta: Oferta | null | undefined)
   if (precio != null && oferta.precio_clp >= precio) fail(400, 'El precio de oferta debe ser menor que el precio referencial')
 }
 
-const guardarItem = (sql: Sql, i: Item) => sql(`insert into items_catalogo (id, pyme_id, tipo, nombre, descripcion, precio_referencial_clp, disponible, categoria, sin_stock, oferta_precio_clp, oferta_desde, oferta_hasta, creado_en)
-  values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+const guardarItem = (sql: Sql, i: Item) => sql(`insert into items_catalogo (id, pyme_id, tipo, nombre, descripcion, precio_referencial_clp, disponible, categoria, sin_stock, oferta_precio_clp, oferta_desde, oferta_hasta, creado_en, foto_url)
+  values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
   on conflict (id) do update set tipo = excluded.tipo, nombre = excluded.nombre, descripcion = excluded.descripcion, precio_referencial_clp = excluded.precio_referencial_clp,
     disponible = excluded.disponible, categoria = excluded.categoria, sin_stock = excluded.sin_stock, oferta_precio_clp = excluded.oferta_precio_clp,
     oferta_desde = excluded.oferta_desde, oferta_hasta = excluded.oferta_hasta`,
-[i.id, i.pyme_id, i.tipo, i.nombre, i.descripcion, i.precio_referencial_clp, i.disponible, i.categoria, i.sin_stock, i.oferta?.precio_clp ?? null, i.oferta?.desde ?? null, i.oferta?.hasta ?? null, i.creado_en])
+[i.id, i.pyme_id, i.tipo, i.nombre, i.descripcion, i.precio_referencial_clp, i.disponible, i.categoria, i.sin_stock, i.oferta?.precio_clp ?? null, i.oferta?.desde ?? null, i.oferta?.hasta ?? null, i.creado_en, i.foto_url])
 
 on('GET', '/pymes/:id/catalogo', async req => {
   const p = await miPyme(req, 'catalogo')
@@ -237,14 +238,16 @@ on('GET', '/pymes/:id/catalogo', async req => {
 
 on('POST', '/pymes/:id/catalogo', async req => {
   const p = await miPyme(req, 'catalogo')
-  const d = parse(itemSchema, req.body)
+  // La foto es opcional: una subida antes por quien crea el ítem (POST /imagenes).
+  const d = parse(itemSchema.extend({ imagen_id: z.string().max(60).optional() }), req.body)
   await exigirCupo(req.sql, p.id, 'items')
   validarOferta(d.precio_referencial_clp ?? null, d.oferta)
   if (ofertaVigente(d.oferta)) await exigirCupo(req.sql, p.id, 'ofertas')
   // Si la Pyme aún no está verificada el ítem se guarda, pero no se publica.
   const item: Item = {
     id: uid(), pyme_id: p.id, tipo: d.tipo, nombre: d.nombre, descripcion: d.descripcion || null, precio_referencial_clp: d.precio_referencial_clp ?? null,
-    disponible: (d.disponible ?? true) && p.estado_verificacion === 'aprobada', categoria: d.categoria || null, sin_stock: d.sin_stock ?? false, oferta: d.oferta ?? null, creado_en: now(),
+    disponible: (d.disponible ?? true) && p.estado_verificacion === 'aprobada', categoria: d.categoria || null, sin_stock: d.sin_stock ?? false, oferta: d.oferta ?? null,
+    foto_url: d.imagen_id ? await fotoPropia(req.sql, d.imagen_id, (await auth(req)).id) : null, creado_en: now(),
   }
   await guardarItem(req.sql, item)
   return item
@@ -273,10 +276,25 @@ on('PUT', '/pymes/:id/catalogo/:itemId', async req => {
   return item
 })
 
+// Foto del ítem: una subida por quien la cambia (POST /imagenes), o null para quitarla. La anterior se borra si nada la usa.
+on('PUT', '/pymes/:id/catalogo/:itemId/foto', async req => {
+  const p = await miPyme(req, 'catalogo')
+  const u = await auth(req)
+  const d = parse(z.object({ imagen_id: z.string().max(60).nullable() }), req.body)
+  const i = await una<{ id: string; foto_url: string | null }>(req.sql, 'select id, foto_url from items_catalogo where id = $1 and pyme_id = $2 for update', [idDe(req.params.itemId), p.id])
+  if (!i) return fail(404, 'Ítem no encontrado')
+  const url = d.imagen_id ? await fotoPropia(req.sql, d.imagen_id, u.id) : null
+  await req.sql('update items_catalogo set foto_url = $2 where id = $1', [i.id, url])
+  if (i.foto_url !== url) await liberarImagen(req.sql, i.foto_url, u.id)
+  return { foto_url: url }
+})
+
 on('DELETE', '/pymes/:id/catalogo/:itemId', async req => {
   const p = await miPyme(req, 'catalogo')
-  const filas = await req.sql('delete from items_catalogo where id = $1 and pyme_id = $2 returning id', [idDe(req.params.itemId), p.id])
+  const u = await auth(req)
+  const filas = await req.sql<{ foto_url: string | null }>('delete from items_catalogo where id = $1 and pyme_id = $2 returning foto_url', [idDe(req.params.itemId), p.id])
   if (!filas.length) return fail(404, 'Ítem no encontrado')
+  await liberarImagen(req.sql, filas[0].foto_url, u.id)
   return undefined
 })
 

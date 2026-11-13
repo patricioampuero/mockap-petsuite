@@ -509,6 +509,23 @@ on('PATCH', '/mascotas/mensajes/:id', req => {
 // ---------- Fotos (mismas reglas que el API: src/shared/imagenes.ts) ----------
 // En la demo, la foto de la mascota se guarda como data: URL, porque no hay servidor que la entregue.
 const dataUrl = (i: { tipo: string; datos: string }) => `data:${i.tipo};base64,${i.datos}`
+// Una foto está en uso mientras alguna fila la muestre (igual que en backend/api/imagenes.ts).
+const fotosEnUso = () => new Set<string | null | undefined>([
+  ...db.publicaciones.map(p => p.foto_url), ...db.mascotas.map(m => m.foto_url), ...db.animales.map(a => a.foto_url), ...db.catalogo.map(i => i.foto_url),
+  ...db.pymes.map(p => p.foto_portada), ...db.ongs.flatMap(o => [o.perfil_borrador?.foto_portada, o.perfil_publicado?.foto_portada]),
+])
+/** La dirección de una foto subida por el usuario; 404 si no existe o es de otra persona. */
+function fotoPropia(imagenId: string, duenoId: string) {
+  const i = db.imagenes.find(x => x.id === imagenId && x.dueno_id === duenoId)
+  if (!i) return fail(404, IMAGEN_AJENA)
+  return dataUrl(i)
+}
+/** Borra la foto del usuario si ya nada la muestra. Dos fotos iguales tienen la misma data: URL: se borra solo una. */
+function liberarImagen(url: string | null, duenoId: string) {
+  if (!url || fotosEnUso().has(url)) return
+  const i = db.imagenes.findIndex(x => x.dueno_id === duenoId && dataUrl(x) === url)
+  if (i >= 0) db.imagenes.splice(i, 1)
+}
 
 on('POST', '/imagenes', req => {
   const u = auth(req)
@@ -517,6 +534,9 @@ on('POST', '/imagenes', req => {
   if (!bytes) return fail(400, IMAGEN_INVALIDA)
   const motivo = revisarImagen(bytes, d.tipo)
   if (motivo) return fail(motivo === IMAGEN_PESADA ? 413 : 400, motivo)
+  // Una foto elegida en un formulario que nunca se guardó deja de contar para el límite al día siguiente.
+  const enUso = fotosEnUso(), ayer = hace(1)
+  db.imagenes = db.imagenes.filter(x => x.dueno_id !== u.id || x.creado_en >= ayer || enUso.has(dataUrl(x)))
   if (db.imagenes.filter(i => i.dueno_id === u.id).length >= MAX_IMAGENES_POR_USUARIO) return fail(422, IMAGENES_AGOTADAS)
   const i = { id: uid(), dueno_id: u.id, tipo: d.tipo, datos: d.datos, bytes: bytes.length, creado_en: now() }
   db.imagenes.push(i)
@@ -532,18 +552,11 @@ on('GET', '/imagenes/:id', req => {
 on('PUT', '/mascotas/:id/foto', req => {
   const [u, m] = propia(req)
   const d = parse(z.object({ imagen_id: z.string().max(60).nullable() }), req.body)
-  let url: string | null = null
-  if (d.imagen_id) {
-    const i = db.imagenes.find(x => x.id === d.imagen_id && x.dueno_id === u.id)
-    if (!i) return fail(404, IMAGEN_AJENA)
-    url = dataUrl(i)
-  }
-  const anterior = m.foto_url, vieja = db.imagenes.find(x => x.dueno_id === u.id && dataUrl(x) === anterior)
+  const url = d.imagen_id ? fotoPropia(d.imagen_id, u.id) : null
+  const anterior = m.foto_url
   m.foto_url = url
   // La foto anterior se borra si nadie más la usa (un extravío publicado conserva la foto que tenía).
-  if (vieja && anterior !== url && !db.publicaciones.some(p => p.foto_url === anterior) && !db.mascotas.some(x => x.foto_url === anterior) && !db.animales.some(a => a.foto_url === anterior)) {
-    db.imagenes = db.imagenes.filter(x => x.id !== vieja.id)
-  }
+  if (anterior !== url) liberarImagen(anterior, u.id)
   return { foto_url: url }
 })
 
@@ -673,7 +686,7 @@ on('GET', '/pymes/:id', req => {
   db.eventos.push({ id: uid(), pyme_id: p.id, item_id: null, tipo: 'visita_perfil', ocurrido_en: now() })
   // Las ofertas se muestran solo mientras están vigentes (y dentro del cupo del plan), y primero.
   const catalogo = itemsPublicos(p.id)
-    .map(i => ({ id: i.id, tipo: i.tipo, nombre: i.nombre, descripcion: i.descripcion, precio_referencial_clp: i.precio_referencial_clp, categoria: i.categoria, sin_stock: i.sin_stock, oferta: ofertaVigente(i.oferta) ? i.oferta : null }))
+    .map(i => ({ id: i.id, tipo: i.tipo, nombre: i.nombre, descripcion: i.descripcion, precio_referencial_clp: i.precio_referencial_clp, categoria: i.categoria, sin_stock: i.sin_stock, oferta: ofertaVigente(i.oferta) ? i.oferta : null, foto_url: i.foto_url ?? null }))
     .sort((a, b) => Number(!!b.oferta) - Number(!!a.oferta) || (a.categoria ?? '').localeCompare(b.categoria ?? '') || a.nombre.localeCompare(b.nombre))
   return { ...pymeResumen(p), catalogo }
 })
@@ -779,14 +792,16 @@ on('GET', '/pymes/:id/catalogo', req => { const p = miPyme(req, 'catalogo'); ret
 
 on('POST', '/pymes/:id/catalogo', req => {
   const p = miPyme(req, 'catalogo')
-  const d = parse(itemSchema, req.body)
+  // La foto es opcional: una subida antes por quien crea el ítem (POST /imagenes).
+  const d = parse(itemSchema.extend({ imagen_id: z.string().max(60).optional() }), req.body)
   exigirCupo(p.id, 'items')
   validarOferta(d.precio_referencial_clp ?? null, d.oferta)
   if (ofertaVigente(d.oferta)) exigirCupo(p.id, 'ofertas')
   // Si la Pyme aún no está verificada el ítem se guarda, pero no se publica.
   const item: Item = {
     id: uid(), pyme_id: p.id, tipo: d.tipo, nombre: d.nombre, descripcion: d.descripcion || null, precio_referencial_clp: d.precio_referencial_clp ?? null,
-    disponible: (d.disponible ?? true) && suscripcionActiva(p.id), categoria: d.categoria || null, sin_stock: d.sin_stock ?? false, oferta: d.oferta ?? null, creado_en: now(),
+    disponible: (d.disponible ?? true) && suscripcionActiva(p.id), categoria: d.categoria || null, sin_stock: d.sin_stock ?? false, oferta: d.oferta ?? null,
+    foto_url: d.imagen_id ? fotoPropia(d.imagen_id, auth(req).id) : null, creado_en: now(),
   }
   db.catalogo.push(item)
   return item
@@ -813,11 +828,27 @@ on('PUT', '/pymes/:id/catalogo/:itemId', req => {
   return item
 })
 
+// Foto del ítem: una subida por quien la cambia, o null para quitarla. La anterior se borra si nada la usa.
+on('PUT', '/pymes/:id/catalogo/:itemId/foto', req => {
+  const p = miPyme(req, 'catalogo')
+  const u = auth(req)
+  const d = parse(z.object({ imagen_id: z.string().max(60).nullable() }), req.body)
+  const item = db.catalogo.find(i => i.id === req.params.itemId && i.pyme_id === p.id)
+  if (!item) return fail(404, 'Ítem no encontrado')
+  const url = d.imagen_id ? fotoPropia(d.imagen_id, u.id) : null
+  const anterior = item.foto_url
+  item.foto_url = url
+  if (anterior !== url) liberarImagen(anterior, u.id)
+  return { foto_url: url }
+})
+
 on('DELETE', '/pymes/:id/catalogo/:itemId', req => {
   const p = miPyme(req, 'catalogo')
+  const u = auth(req)
   const i = db.catalogo.findIndex(x => x.id === req.params.itemId && x.pyme_id === p.id)
   if (i < 0) return fail(404, 'Ítem no encontrado')
-  db.catalogo.splice(i, 1)
+  const [item] = db.catalogo.splice(i, 1)
+  liberarImagen(item.foto_url, u.id)
   return undefined
 })
 
@@ -966,6 +997,8 @@ const publicacionSchema = z.object({
   animal_id: z.string().optional(),
   sector: z.string().trim().max(80, 'El sector admite hasta 80 caracteres').refine(sinEnlaces, 'No se permiten enlaces externos').optional(),
   fecha_evento: fecha.optional(),
+  // Foto subida por el autor (POST /imagenes). En un extravío reemplaza a la foto de la mascota.
+  imagen_id: z.string().max(60).optional(),
 })
 
 on('POST', '/muro', req => {
@@ -988,7 +1021,8 @@ on('POST', '/muro', req => {
     if (d.mascota_id && m?.tutor_id !== u.id) return fail(403, 'La mascota no es tuya')
     if (d.tipo === 'evento' && !d.fecha_evento) return fail(400, 'Indica la fecha del evento')
     if (d.tipo === 'evento' && d.fecha_evento! < dayOffset(0)) return fail(400, 'La fecha del evento ya pasó')
-    p = { ...base, comuna_id: u.comuna_id, mascota_id: d.tipo === 'extravio' ? m?.id ?? null : null, foto_url: d.tipo === 'extravio' ? m?.foto_url ?? null : null, fecha_evento: d.tipo === 'evento' ? d.fecha_evento! : null }
+    const foto = d.imagen_id ? fotoPropia(d.imagen_id, u.id) : null
+    p = { ...base, comuna_id: u.comuna_id, mascota_id: d.tipo === 'extravio' ? m?.id ?? null : null, foto_url: foto ?? (d.tipo === 'extravio' ? m?.foto_url ?? null : null), fecha_evento: d.tipo === 'evento' ? d.fecha_evento! : null }
   }
   db.publicaciones.push(p)
   return { id: p.id, tipo: p.tipo, texto: p.texto, creado_en: p.creado_en }
@@ -1179,10 +1213,11 @@ on('GET', '/ong/animales', req => {
 
 on('POST', '/ong/animales', req => {
   const o = miOng(req)
-  const d = parse(animalSchema, req.body)
+  // La foto es opcional: una subida antes por la misma ONG (POST /imagenes).
+  const d = parse(animalSchema.extend({ imagen_id: z.string().max(60).optional() }), req.body)
   const a: Animal = {
     id: uid(), ong_id: o.id, nombre: d.nombre, especie: d.especie, raza: d.raza ?? null, edad_estimada: d.edad_estimada ?? null, estado_salud: d.estado_salud ?? null, historia: d.historia ?? null,
-    historial_salud: d.historial_salud ?? ficha(), foto_url: null, estado: 'disponible', mascota_id: null, publicado_en: now(), prioritario: false,
+    historial_salud: d.historial_salud ?? ficha(), foto_url: d.imagen_id ? fotoPropia(d.imagen_id, o.propietario_id) : null, estado: 'disponible', mascota_id: null, publicado_en: now(), prioritario: false,
   }
   db.animales.push(a)
   return { ...a, publicado: o.estado_verificacion === 'aprobada' }
@@ -1199,6 +1234,19 @@ on('PUT', '/ong/animales/:id', req => {
     historia: d.historia ?? a.historia, historial_salud: d.historial_salud ?? a.historial_salud, estado: a.estado === 'adoptado' ? a.estado : d.estado ?? a.estado,
   })
   return a
+})
+
+// Foto del animal: una subida por la misma ONG, o null para quitarla. La anterior se borra si nada la usa.
+on('PUT', '/ong/animales/:id/foto', req => {
+  const o = miOng(req)
+  const d = parse(z.object({ imagen_id: z.string().max(60).nullable() }), req.body)
+  const a = db.animales.find(x => x.id === req.params.id && x.ong_id === o.id)
+  if (!a) return fail(404, 'No encontrado')
+  const url = d.imagen_id ? fotoPropia(d.imagen_id, o.propietario_id) : null
+  const anterior = a.foto_url
+  a.foto_url = url
+  if (anterior !== url) liberarImagen(anterior, o.propietario_id)
+  return { foto_url: url }
 })
 
 // Prioritario: a lo más uno por ONG (MAX_PRIORITARIOS_POR_ONG). Marcar a otro le quita la prioridad al anterior.

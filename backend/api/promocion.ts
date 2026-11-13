@@ -4,6 +4,7 @@ import { ONG_CUPOS } from '../../src/modules/plans/plans'
 import { auth, avisarAsesores, correoDe, enviarCorreo } from './auth'
 import { comunasDe, dayOffset, fail, fecha, idDe, mesActual, now, on, parse, porTexto, sinEnlaces, sumarDias, uid, una } from './core'
 import type { Row, Sql } from './db'
+import { fotoSubidaSchema } from '../../src/shared/validators'
 import { miOng, VISIBLE, type Ong } from './adopcion'
 import { cuponesVigentes, estadoPlanDe, exigirCupo, miPyme, permisosEnPyme, planDe, suscripcionesDe, type Pyme } from './negocio'
 
@@ -250,6 +251,8 @@ const ongPerfilSchema = z.object({
   }).nullable().default(null),
   emblema: z.enum(['heart', 'paw', 'home', 'shield']).default('heart'),
   color: z.enum(['acento', 'calido', 'info', 'vino']).default('acento'),
+  // Portada opcional: una foto subida por la ONG. Pasa por la misma revisión del asesor que el resto del perfil.
+  foto_portada: fotoSubidaSchema.nullable().default(null),
 })
 on('GET', '/ong/perfil', async req => {
   const o = await miOng(req)

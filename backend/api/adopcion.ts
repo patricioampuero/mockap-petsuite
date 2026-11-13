@@ -7,6 +7,7 @@ import { comunasDe, fail, hace, idDe, now, on, parse, uid, una, type Req } from 
 import type { Sql } from './db'
 import { fichaSchema } from './ficha'
 import { ordenAdopciones, PRIORIDAD_SOLO_DISPONIBLES } from '../../src/shared/prioridad'
+import { fotoPropia, liberarImagen } from './imagenes'
 
 export type Ong = {
   id: string; propietario_id: string; nombre: string; tipo: 'refugio' | 'rescatista_independiente' | 'agrupacion'; descripcion: string | null; comuna_id: number; contacto: string | null; redes_sociales: string | null
@@ -112,11 +113,12 @@ on('GET', '/ong/animales', async req => {
 
 on('POST', '/ong/animales', async req => {
   const o = await miOng(req)
-  const d = parse(animalSchema, req.body)
+  // La foto es opcional: una subida antes por la misma ONG (POST /imagenes).
+  const d = parse(animalSchema.extend({ imagen_id: z.string().max(60).optional() }), req.body)
   const vacia: FichaDatos = { condiciones: [], medicamentos: [], notaEmergencia: '', vacunas: [], alergias: [], tratamientos: [], atenciones: [], alertasCriticas: [] }
   const a: Animal = {
     id: uid(), ong_id: o.id, nombre: d.nombre, especie: d.especie, raza: d.raza ?? null, edad_estimada: d.edad_estimada ?? null, estado_salud: d.estado_salud ?? null, historia: d.historia ?? null,
-    historial_salud: d.historial_salud ?? vacia, foto_url: null, estado: 'disponible', mascota_id: null, publicado_en: now(), prioritario: false,
+    historial_salud: d.historial_salud ?? vacia, foto_url: d.imagen_id ? await fotoPropia(req.sql, d.imagen_id, o.propietario_id) : null, estado: 'disponible', mascota_id: null, publicado_en: now(), prioritario: false,
   }
   await guardarAnimal(req.sql, a)
   return { ...a, publicado: o.estado_verificacion === 'aprobada' }
@@ -134,6 +136,19 @@ on('PUT', '/ong/animales/:id', async req => {
   })
   await guardarAnimal(req.sql, a)
   return a
+})
+
+// Foto del animal: una foto subida por la misma ONG (POST /imagenes), o null para quitarla. La anterior se borra si
+// nadie más la usa (una publicación del muro conserva la foto que tenía al publicarse).
+on('PUT', '/ong/animales/:id/foto', async req => {
+  const o = await miOng(req)
+  const d = parse(z.object({ imagen_id: z.string().max(60).nullable() }), req.body)
+  const a = await una<Animal>(req.sql, 'select * from animales where id = $1 and ong_id = $2 for update', [idDe(req.params.id), o.id])
+  if (!a) return fail(404, 'No encontrado')
+  const url = d.imagen_id ? await fotoPropia(req.sql, d.imagen_id, o.propietario_id) : null
+  await req.sql('update animales set foto_url = $2 where id = $1', [a.id, url])
+  if (a.foto_url !== url) await liberarImagen(req.sql, a.foto_url, o.propietario_id)
+  return { foto_url: url }
 })
 
 // Prioritario: a lo más uno por ONG (MAX_PRIORITARIOS_POR_ONG, y un índice único en la base). Marcar a otro le quita

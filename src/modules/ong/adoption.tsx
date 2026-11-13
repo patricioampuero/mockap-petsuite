@@ -10,6 +10,8 @@ import { useModalFocus } from '../../shared/accessibility'
 import { ShareButton } from '../../shared/share'
 import { Metric } from '../../shared/metric'
 import { ProfileCover } from '../../shared/profile-cover'
+import { FotoEditable, FotoOpcional } from '../../shared/foto-editable'
+import type { FotoSubida } from '../../shared/fotos'
 
 type AnimalResumen = { id: string; nombre: string; especie: string; raza: string | null; edad_estimada: string | null; estado_salud: string | null; foto_url: string | null; ong: string; comuna: string; prioritario?: boolean }
 type OrgResumen = { id: string; nombre: string; tipo: string; comuna: string; mision: string | null; animales: number; cupones: number }
@@ -175,7 +177,7 @@ function Animals({ ong }: { ong: Ong }) {
     {error && animals && <p className="form-error" role="alert">{error}</p>}
     {notice && <p className="save-message" role="status">{notice}</p>}
     {!animals && !error && <LoadingState label="Cargando animales de la ONG" />}
-    <div className="catalog-list">{animals?.map(a => <div className="catalog-item" key={a.id}><Photo src={a.foto_url} nombre={a.nombre} className="pet-photo small-photo" /><div className="catalog-item-main"><strong>{a.nombre}</strong>{a.prioritario && <span className="chip chip-warn priority-chip"><Star size={12} aria-hidden="true" /> Prioritario</span>}<p>{a.especie}{a.raza ? ` · ${a.raza}` : ''}{a.edad_estimada ? ` · ${a.edad_estimada}` : ''}</p><small>{estadoLabel[a.estado]} · {a.estado === 'adoptado' ? (a.mascota_id ? 'Ficha Única creada' : 'Pendiente de vincular la Ficha Única') : a.publicado ? 'Publicado' : 'Borrador (sin publicar)'} · {a.visitas_7d} visitas en 7 días · {a.solicitudes_abiertas} solicitudes abiertas</small></div>
+    <div className="catalog-list">{animals?.map(a => <div className="catalog-item" key={a.id}><FotoEditable src={a.foto_url} nombre={a.nombre} className="pet-photo catalog-photo" asignar={async imagenId => { await api(`/ong/animales/${a.id}/foto`, { method: 'PUT', body: { imagen_id: imagenId } }); await load() }} /><div className="catalog-item-main"><strong>{a.nombre}</strong>{a.prioritario && <span className="chip chip-warn priority-chip"><Star size={12} aria-hidden="true" /> Prioritario</span>}<p>{a.especie}{a.raza ? ` · ${a.raza}` : ''}{a.edad_estimada ? ` · ${a.edad_estimada}` : ''}</p><small>{estadoLabel[a.estado]} · {a.estado === 'adoptado' ? (a.mascota_id ? 'Ficha Única creada' : 'Pendiente de vincular la Ficha Única') : a.publicado ? 'Publicado' : 'Borrador (sin publicar)'} · {a.visitas_7d} visitas en 7 días · {a.solicitudes_abiertas} solicitudes abiertas</small></div>
       <div className="qr-actions"><button className="secondary" onClick={() => setReviewing(a)}>{a.estado === 'adoptado' && !a.mascota_id ? 'Vincular ficha' : 'Solicitudes'}</button>{a.publicado && a.estado === 'disponible' && <button className="secondary" onClick={() => { setNotice(''); setDiffusing(a) }}>Difundir en el muro</button>}{(a.estado === 'disponible' || a.prioritario) && <button className="secondary" aria-pressed={!!a.prioritario} onClick={() => setPrioridad(a, !a.prioritario)}><Star size={14} aria-hidden="true" /> {a.prioritario ? 'Quitar prioridad' : 'Marcar prioritario'}</button>}{a.estado !== 'adoptado' && <><button className="secondary" onClick={() => setEditing(a)}>Editar</button><button className="text-button" onClick={() => setEstado(a, a.estado === 'disponible' ? 'en_proceso' : 'disponible')}>{a.estado === 'disponible' ? 'Marcar no disponible' : 'Marcar disponible'}</button></>}</div></div>)}
       {animals && animals.length === 0 && <EmptyState title="Aún no hay animales" description="Publica el primer animal para recibir solicitudes de adopción." action="Publicar animal" onAction={() => setEditing('new')} />}</div>
     {editing && <AnimalForm animal={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await load() }} />}
@@ -204,6 +206,8 @@ function DiffuseModal({ animal, onClose, onDone }: { animal: MiAnimal; onClose: 
 function AnimalForm({ animal, onClose, onSaved }: { animal: MiAnimal | null; onClose: () => void; onSaved: () => Promise<void> }) {
   useModalFocus(onClose, 'input')
   const [form, setForm] = useState({ nombre: animal?.nombre || '', especie: animal?.especie || 'perro', raza: animal?.raza || '', edad_estimada: animal?.edad_estimada || '', estado_salud: animal?.estado_salud || '', historia: animal?.historia || '', vacunas: linesOf(animal?.historial_salud) })
+  // Un animal nuevo puede llevar foto desde el inicio; la de uno ya publicado se cambia en su tarjeta.
+  const [foto, setFoto] = useState<FotoSubida | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const submit = async (event: React.FormEvent) => {
@@ -214,10 +218,11 @@ function AnimalForm({ animal, onClose, onSaved }: { animal: MiAnimal | null; onC
     setBusy(true); setError('')
     const historial_salud = { ...(animal?.historial_salud || {}), vacunas }
     const body = { nombre: form.nombre.trim(), especie: form.especie, ...(form.raza && { raza: form.raza }), ...(form.edad_estimada && { edad_estimada: form.edad_estimada }), ...(form.estado_salud && { estado_salud: form.estado_salud }), ...(form.historia && { historia: form.historia }), historial_salud }
-    try { animal ? await api(`/ong/animales/${animal.id}`, { method: 'PUT', body }) : await api('/ong/animales', { method: 'POST', body }); await onSaved() } catch (e) { setError(errorText(e)); setBusy(false) }
+    try { animal ? await api(`/ong/animales/${animal.id}`, { method: 'PUT', body }) : await api('/ong/animales', { method: 'POST', body: { ...body, ...(foto && { imagen_id: foto.id }) } }); await onSaved() } catch (e) { setError(errorText(e)); setBusy(false) }
   }
   const set = (k: string, v: string) => setForm({ ...form, [k]: v })
   return <div className="modal-backdrop"><form className="modal" onSubmit={submit} noValidate><button type="button" className="close" aria-label="Cerrar" onClick={onClose}><X size={20} /></button><p className="eyebrow">{animal ? 'EDITAR ANIMAL' : 'NUEVO ANIMAL EN ADOPCIÓN'}</p><h2>{animal ? animal.nombre : 'Publica un animal'}</h2>
+    {!animal && <div className="composer-photo"><span className="composer-photo-label">Foto <small>(recomendada: es lo primero que ven en Adopciones)</small></span><FotoOpcional foto={foto} onChange={setFoto} /></div>}
     <div className="form-grid"><label>Nombre<input value={form.nombre} onChange={e => set('nombre', e.target.value)} /></label><label>Especie<select value={form.especie} onChange={e => set('especie', e.target.value)}><option value="perro">Perro</option><option value="gato">Gato</option><option value="otro">Otro</option></select></label><label>Raza (aprox.)<input value={form.raza} onChange={e => set('raza', e.target.value)} /></label><label>Edad estimada<input value={form.edad_estimada} onChange={e => set('edad_estimada', e.target.value)} placeholder="1 a 2 años" /></label></div>
     <label className="composer-label">Estado de salud<input value={form.estado_salud} onChange={e => set('estado_salud', e.target.value)} placeholder="Ej.: sano, esterilizado y vacunado" /></label>
     <label className="composer-label">Historia de rescate<textarea rows={3} maxLength={2000} value={form.historia} onChange={e => set('historia', e.target.value)} /></label>
