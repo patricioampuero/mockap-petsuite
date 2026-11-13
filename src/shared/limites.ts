@@ -4,7 +4,7 @@
 
 export type Regla = { clave: string; max: number; segundos: number }
 /** cuenta: qué resultado suma un evento. 'fallo' = credenciales incorrectas (401); 'exito' = la ruta respondió bien. */
-export type Limite = { reglas: Regla[]; cuenta: 'fallo' | 'exito'; limpiarAlExito?: string }
+export type Limite = { reglas: Regla[]; cuenta: 'fallo' | 'exito'; limpiarAlExito?: string; /** Estado que cuenta como fallo (401 si no se indica). */ estadoFallo?: number }
 
 export const STATUS_DEMASIADOS = 429
 
@@ -37,6 +37,8 @@ export function limitesDe(method: string, path: string, body: unknown, cliente: 
   if (path === '/auth/registro' || path === '/auth/reenviar-verificacion' || path === '/auth/recuperar') {
     return { reglas: [{ clave: `correos:${cliente}`, max: 10, segundos: 3600 }], cuenta: 'exito' }
   }
+  // Cambiar la contraseña: como el ingreso, 5 contraseñas actuales incorrectas por cliente cada 15 minutos.
+  if (path === '/auth/cambiar-clave') return { reglas: [{ clave: `cambiar-clave:${cliente}`, max: 5, segundos: 900 }], cuenta: 'fallo', estadoFallo: 403 }
   // Avisos de Mercado Pago: públicos, así que se limitan (300 por cliente cada hora; Mercado Pago reintenta si recibe 429).
   if (path === '/pagos/mercadopago/webhook') return { reglas: [{ clave: `mp:${cliente}`, max: 300, segundos: 3600 }], cuenta: 'exito' }
   // Fotos: 30 por cliente cada hora (además del máximo de fotos por cuenta).
@@ -49,4 +51,4 @@ export function limitesDe(method: string, path: string, body: unknown, cliente: 
 }
 
 /** El estado de la respuesta que suma un evento según la regla. */
-export const sumaEvento = (limite: Limite, status: number) => limite.cuenta === 'exito' ? status < 400 : status === 401
+export const sumaEvento = (limite: Limite, status: number) => limite.cuenta === 'exito' ? status < 400 : status === (limite.estadoFallo ?? 401)

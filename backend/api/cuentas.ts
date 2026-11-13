@@ -2,7 +2,7 @@
 import { z } from 'zod'
 import { PLANES } from '../../src/modules/plans/plans'
 import { VERSION_PRIVACIDAD } from '../../src/shared/legal'
-import { CORREO_SIN_CONFIRMAR, SEGUNDOS_ENTRE_ENVIOS, correoRestablecer, correoVerificacion } from '../../src/shared/cuentas'
+import { CLAVE_ACTUAL_INCORRECTA, CORREO_SIN_CONFIRMAR, SEGUNDOS_ENTRE_ENVIOS, cambiarClaveSchema, correoRestablecer, correoVerificacion, perfilSchema } from '../../src/shared/cuentas'
 import { auth, cerrarSesiones, cifrarClave, claveCorrecta, crearSesion, emitirToken, enviarCorreo, levantarVencidas, permisosDe, segundosDesdeEnvio, usarToken, USUARIO, usuarioPorId, type Usuario } from './auth'
 import { comunasDe, fail, now, on, parse, porTexto, uid, una } from './core'
 import type { Sql } from './db'
@@ -115,5 +115,26 @@ on('GET', '/auth/yo', async req => {
   const u = await auth(req)
   return { id: u.id, rol: u.rol, nombre_visible: u.nombre_visible, correo: u.correo, comuna_id: u.comuna_id, permisos: await permisosDe(req.sql, u) }
 })
+// Perfil: el nombre visible y la comuna. El correo no se cambia aquí: identifica la cuenta y está confirmado.
+on('PATCH', '/auth/yo', async req => {
+  const u = await auth(req)
+  const d = parse(perfilSchema, req.body)
+  if (d.comuna_id !== undefined && !(await comunasDe(req.sql)).has(d.comuna_id)) return fail(400, 'Comuna no válida')
+  const nuevo = { ...u, nombre_visible: d.nombre_visible ?? u.nombre_visible, comuna_id: d.comuna_id ?? u.comuna_id }
+  await req.sql('update usuarios set nombre_visible = $2, comuna_id = $3 where id = $1', [u.id, nuevo.nombre_visible, nuevo.comuna_id])
+  return { id: u.id, rol: u.rol, nombre_visible: nuevo.nombre_visible, correo: u.correo, comuna_id: nuevo.comuna_id, permisos: await permisosDe(req.sql, u) }
+})
+
+// Cambiar la contraseña con la actual. Cierra todas las sesiones, igual que restablecerla con un enlace.
+on('POST', '/auth/cambiar-clave', async req => {
+  const u = await auth(req)
+  const d = parse(cambiarClaveSchema, req.body)
+  const fila = await una<{ clave_hash: string }>(req.sql, 'select clave_hash from usuarios where id = $1', [u.id])
+  if (!(await claveCorrecta(d.actual, fila?.clave_hash))) return fail(403, CLAVE_ACTUAL_INCORRECTA)
+  await req.sql('update usuarios set clave_hash = $2 where id = $1', [u.id, await cifrarClave(d.nueva)])
+  await cerrarSesiones(req.sql, u.id)
+  return { ok: true }
+})
+
 on('GET', '/comunas', async req => [...(await comunasDe(req.sql))].map(([id, nombre]) => ({ id, nombre })).sort(porTexto(c => c.nombre)))
 on('GET', '/planes', () => PLANES)

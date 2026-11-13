@@ -3,11 +3,11 @@
 import { z } from 'zod'
 import {
   avisoDocumentosCompletos, correoDocumentoRechazado, DOCUMENTO_INVALIDO, DOCUMENTO_NO_ENCONTRADO, DOCUMENTO_PESADO, DOCUMENTOS,
-  nombreArchivo, revisarDocumento, TIPOS_ARCHIVO, TIPOS_DOCUMENTO, vistaDocumentos, type ArchivoDocumento, type TipoDocumento,
+  nombreArchivo, revisarDocumento, SOLO_DUENO_DOCUMENTOS, TIPOS_ARCHIVO, TIPOS_DOCUMENTO, vistaDocumentos, type ArchivoDocumento, type TipoDocumento,
 } from '../../src/shared/documentos'
 import { desdeBase64 } from '../../src/shared/imagenes'
 import { auth, avisarAsesores, correoDe, enviarCorreo, type Usuario } from './auth'
-import { fail, idDe, now, on, parse, uid, una } from './core'
+import { fail, idDe, now, on, parse, uid, una, type Req } from './core'
 import type { Sql } from './db'
 import { miPyme, PYME, type Pyme } from './negocio'
 
@@ -27,17 +27,23 @@ const subida = z.object({
   datos: z.string().max(3_000_000, DOCUMENTO_PESADO),
 })
 
+async function delDueno(req: Req) {
+  const p = await miPyme(req, 'perfil'), u = await auth(req)
+  if (p.propietario_id !== u.id) return fail(403, SOLO_DUENO_DOCUMENTOS)
+  return { p, u }
+}
+
 async function binario(sql: Sql, condicion: string, params: unknown[]) {
   const d = await una<{ mime: string; nombre: string; datos: string }>(sql, `select mime, nombre, encode(datos, 'base64') as datos from documentos_pyme where ${condicion}`, params)
   if (!d) return fail(404, DOCUMENTO_NO_ENCONTRADO)
   return { __binario: true, privado: true, tipo: d.mime, base64: d.datos.replace(/\s/g, ''), nombre: d.nombre }
 }
 
-on('GET', '/pymes/:id/documentos', async req => documentosDe(req.sql, await miPyme(req, 'perfil')))
+on('GET', '/pymes/:id/documentos', async req => documentosDe(req.sql, (await delDueno(req)).p))
 
 // Un documento por tipo: subir otro reemplaza al anterior y vuelve a revisión.
 on('PUT', '/pymes/:id/documentos/:tipo', async req => {
-  const p = await miPyme(req, 'perfil'), u = await auth(req)
+  const { p, u } = await delDueno(req)
   const tipo = req.params.tipo as TipoDocumento
   if (!TIPOS_DOCUMENTO.includes(tipo)) return fail(404, DOCUMENTO_NO_ENCONTRADO)
   const d = parse(subida, req.body)
@@ -62,7 +68,7 @@ on('PUT', '/pymes/:id/documentos/:tipo', async req => {
 })
 
 on('GET', '/pymes/:id/documentos/:docId/archivo', async req => {
-  const p = await miPyme(req, 'perfil')
+  const { p } = await delDueno(req)
   return binario(req.sql, 'id = $1 and pyme_id = $2', [idDe(req.params.docId), p.id])
 })
 

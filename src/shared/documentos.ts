@@ -18,6 +18,8 @@ export const MAX_BYTES_DOCUMENTO_DEMO = 300_000
 export const DOCUMENTO_INVALIDO = 'El archivo debe ser un PDF, JPG o PNG'
 export const DOCUMENTO_PESADO = 'El archivo pesa más de 2 MB: escanéalo con menos resolución o súbelo como foto'
 export const DOCUMENTO_NO_ENCONTRADO = 'Documento no encontrado'
+/** Los documentos son de la empresa: un jefe de local o el personal clínico no los ve ni los cambia. */
+export const SOLO_DUENO_DOCUMENTOS = 'Los documentos de validación los gestiona el dueño del negocio'
 export const DOCUMENTO_SIN_ARCHIVO_DEMO = 'En la demo solo se guardan archivos de hasta 300 KB: este quedó registrado sin su contenido'
 
 /**

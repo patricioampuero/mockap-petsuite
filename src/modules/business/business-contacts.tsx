@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, MessageCircle, Send } from 'lucide-react'
-import { api, errorText } from '../../shared/api'
+import { api, errorText, modoDemo } from '../../shared/api'
 import type { MiPyme } from './business'
 import { EmptyState, ErrorState, LoadingState } from '../../shared/feedback'
 import { businessReplySchema } from '../../shared/validators'
@@ -33,7 +33,7 @@ export function BusinessContacts({ pyme }: { pyme: MiPyme }) {
   const shown = (contacts || []).filter(c => filter === 'Todos' || filter === 'Nuevos' && c.estado === 'nuevo' || filter === 'Respondidos' && c.estado === 'respondido')
   const unread = contacts?.filter(c => c.estado === 'nuevo').length || 0
   return <section className="page business-contacts-page"><div className="page-title"><div><p className="eyebrow">TU NEGOCIO EN PETSUITE</p><h1>Contactos recibidos</h1><p className="muted">Consultas que llegaron desde tu ficha en el directorio.</p></div><span className="moderation-title-count">{unread} {unread === 1 ? 'nuevo' : 'nuevos'}</span></div>
-    <div className="business-contacts-intro"><div className="business-contacts-icon"><MessageCircle size={24} /></div><div><strong>Conversaciones con la comunidad</strong><p>Responde aquí para que el tutor vea tu mensaje en «Mis consultas». Este intercambio se guarda en el navegador de demostración.</p></div></div>
+    <div className="business-contacts-intro"><div className="business-contacts-icon"><MessageCircle size={24} /></div><div><strong>Conversaciones con la comunidad</strong><p>Responde aquí para que el tutor vea tu mensaje en «Mis consultas».{modoDemo && ' En la demo, este intercambio se guarda en este navegador.'}</p></div></div>
     <div className="user-filters">{(['Todos', 'Nuevos', 'Respondidos'] as const).map(value => <button key={value} className={filter === value ? 'category-tab active' : 'category-tab'} onClick={() => setFilter(value)}>{value}{value === 'Nuevos' ? ` · ${unread}` : ''}</button>)}</div>
     {error && !contacts && <ErrorState message={error} onRetry={() => void load()} />}
     {error && contacts && !open && <p className="form-error" role="alert">{error}</p>}

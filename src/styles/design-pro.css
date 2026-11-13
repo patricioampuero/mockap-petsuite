@@ -847,3 +847,21 @@ body:has(.public-site) { min-width: 0; }
 .local-phone:hover { text-decoration: underline; }
 .priority-chip { display: inline-flex; align-items: center; gap: 4px; width: fit-content; }
 .explore-match { margin: 0; font-size: 0.82rem; color: var(--color-accent-strong); }
+
+/* Avisos: con el fondo claro del diseño actual el texto va oscuro (una regla antigua de styles.css lo dejaba blanco,
+   de cuando el aviso tenía fondo oscuro) y con margen interno aunque no lleve ícono. */
+.alert-card { padding: 18px 22px; color: var(--color-text-primary); }
+.alert-card strong { color: var(--color-text-primary); }
+.alert-card p { color: var(--color-text-secondary); }
+
+/* Portada propia del negocio */
+.business-cover-upload { display: inline-flex; align-items: center; gap: 6px; margin-block: 4px 10px; cursor: pointer; }
+.business-cover-upload:focus-within { outline: 2px solid var(--color-accent-solid); outline-offset: 2px; }
+.business-cover-upload.is-busy { cursor: progress; opacity: 0.75; }
+
+/* Selectores de los formularios de configuración y alta con la misma altura que los campos de texto */
+.settings-form-grid select { min-height: 44px; width: 100%; padding: 0 12px; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; }
+.settings-form-grid select:focus-visible { outline: 2px solid var(--color-accent-solid); outline-offset: 1px; }
+@media (max-width: 480px) {
+  .settings-card-heading .profile-avatar { display: none; }
+}

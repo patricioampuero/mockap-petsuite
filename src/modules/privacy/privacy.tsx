@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Download } from 'lucide-react'
-import { api, errorText, fechaLarga } from '../../shared/api'
+import { api, errorText, fechaLarga, modoDemo } from '../../shared/api'
 import { MailList, type Correo } from '../advisor/advisor'
 import { ErrorState, LoadingState } from '../../shared/feedback'
 
@@ -65,5 +65,5 @@ export function MyInbox() {
   const [error, setError] = useState('')
   const load = useCallback(() => api<Correo[]>('/correos/mios').then(value => { setRows(value); setError('') }).catch(e => setError(errorText(e))), [])
   useEffect(() => { void load() }, [load])
-  return <div className="settings-card"><div className="settings-card-heading"><div><p className="eyebrow">MODO DEMOSTRACIÓN</p><h2>Correos recibidos</h2><p className="muted">Sin servidor de correo, los mensajes que PetSuite te enviaría se guardan aquí.</p></div></div>{error && !rows && <ErrorState message={error} onRetry={() => void load()} />}{error && rows && <p className="form-error" role="alert">{error}</p>}{rows ? <MailList rows={rows} onRefresh={() => void load()} /> : !error && <LoadingState label="Cargando correos recibidos" />}</div>
+  return <div className="settings-card"><div className="settings-card-heading"><div><p className="eyebrow">{modoDemo ? 'MODO DEMOSTRACIÓN' : 'TU BANDEJA'}</p><h2>{modoDemo ? 'Correos recibidos' : 'Correos que te enviamos'}</h2><p className="muted">{modoDemo ? 'Sin servidor de correo, los mensajes que PetSuite te enviaría se guardan aquí.' : 'Copia de los correos que PetSuite te envió. Los enlaces de acceso no se guardan aquí: solo llegan a tu correo.'}</p></div></div>{error && !rows && <ErrorState message={error} onRetry={() => void load()} />}{error && rows && <p className="form-error" role="alert">{error}</p>}{rows ? <MailList rows={rows} onRefresh={() => void load()} /> : !error && <LoadingState label="Cargando correos recibidos" />}</div>
 }

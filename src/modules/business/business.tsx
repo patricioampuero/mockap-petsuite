@@ -147,7 +147,7 @@ function PagoTransferencia({ monto, negocio }: { monto: number; negocio: string 
 function StatusBanner({ pyme, onDocuments }: { pyme: MiPyme; onDocuments?: () => void }) {
   if (pyme.estado_verificacion === 'aprobada') return null
   const faltan = pyme.estado_verificacion === 'pendiente' ? pyme.documentos_faltan ?? [] : []
-  if (faltan.length) return <div className="alert-card warn"><div className="alert-icon"><FileUp size={22} /></div><div><strong>Sube tus documentos para publicar tu negocio</strong><p>Falta: {faltan.join(', ')}. Un asesor los revisa antes de aprobar el alta; mientras tanto puedes preparar tu catálogo.</p>{onDocuments && pyme.permisos.includes('perfil') && <button type="button" className="primary" onClick={onDocuments}>Subir documentos</button>}</div></div>
+  if (faltan.length) return <div className="alert-card warn"><div className="alert-icon"><FileUp size={22} /></div><div><strong>Sube tus documentos para publicar tu negocio</strong><p>Falta: {faltan.join(', ')}. Un asesor los revisa antes de aprobar el alta; mientras tanto puedes preparar tu catálogo.</p>{onDocuments && pyme.rol_interno === 'dueno' && <button type="button" className="primary" onClick={onDocuments}>Subir documentos</button>}</div></div>
   return <div className="alert-card"><div className="alert-icon"><ShoppingBag size={22} /></div><div><strong>Tu negocio está: {estadoTexto[pyme.estado_verificacion]}</strong><p>{pyme.estado_verificacion === 'pendiente' ? 'Revisaremos tus datos, tus documentos y tu pago. Mientras tanto puedes preparar tu catálogo; se publicará al aprobarse.' : 'Contacta al equipo PetSuite para revisar tu solicitud.'}</p></div></div>
 }
 
@@ -166,7 +166,7 @@ export function BusinessArea({ active, setActive }: { active: string; setActive?
   const modulo = vistaModulo[active]
   if (modulo && !pyme.permisos.includes(modulo)) return <section className="page role-page"><PermissionState description="Tu rol en la Pyme no tiene acceso a este módulo. Pide permisos al dueño del negocio." /></section>
   if (active === 'business-profile') return pyme.sucursal ? <Branches pyme={pyme} /> : <BusinessProfile pyme={pyme} onSaved={reload} />
-  if (active === 'documents') return <BusinessDocuments pyme={pyme} onChange={reload} />
+  if (active === 'documents') return pyme.rol_interno === 'dueno' ? <BusinessDocuments pyme={pyme} onChange={reload} /> : <section className="page role-page"><PermissionState description="Los documentos de validación los gestiona el dueño del negocio." /></section>
   if (active === 'branches') return <Branches pyme={pyme} />
   if (active === 'catalog') return <Catalog pyme={pyme} />
   if (active === 'contacts') return <BusinessContacts pyme={pyme} />

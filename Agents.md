@@ -1192,3 +1192,41 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
     - una carga repetida se rechaza;
     - quitar borra todo lo cargado y lo creado durante la demo, deja intactos el administrador y la ficha reales, y es idempotente.
   - Simulación contra la base real (sin escribir): 10 cuentas, 4 negocios, 2 ONG, 6 animales, 162 canjes y 1.749 eventos.
+### Repaso de todos los módulos en la versión real
+
+- Fecha: 2026-11-13.
+- Rama: `patricioampuero/repaso-modulos`, creada sobre `patricioampuero/demo-presentacion-real`. Se fusiona después de ella.
+- Archivos agregados: `src/modules/auth/account-settings.tsx`.
+- Archivos modificados:
+  - API: `backend/api/cuentas.ts` y `backend/api/documentos.ts`.
+  - Mock: `src/mock/server.ts` y `src/mock/documentos.ts`.
+  - Compartidos: `src/shared/cuentas.ts`, `src/shared/limites.ts`, `src/shared/documentos.ts` y `src/shared/validators.ts`.
+  - Interfaz: `src/App.tsx`, `src/modules/business/business.tsx`, `src/modules/business/business-profile.tsx`, `src/modules/business/business-contacts.tsx`, `src/modules/business/team.tsx`, `src/modules/promotions/promotions.tsx`, `src/modules/plans/plans.ts`, `src/modules/plans/plans-ui.tsx`, `src/modules/directory/directory.tsx`, `src/modules/advisor/advisor.tsx`, `src/modules/privacy/privacy.tsx` y `src/styles/design-pro.css`.
+  - Otros: `backend/api/paridad.test.mjs` y `Agents.md`.
+- Cómo se hizo: un recorrido automático por la build real (`VITE_API_URL`) contra el API real sobre PGlite con la demo. Cada rol (tutor, veterinaria, clínico, tienda, jefe de local, peluquería, dos ONG, asesor y administrador) abrió cada opción de su menú, más las páginas públicas: 100 vistas a 1366 px y a 390 px. Se registraron los errores de JavaScript, las llamadas al API con error, los mensajes de error en pantalla y los desbordes, y se revisó cada captura.
+- Cambio realizado:
+  - **Configuración → Perfil guardaba solo en el navegador.** Mostraba «Cambios guardados» sin guardar nada.
+    - Ahora el nombre visible y la comuna se guardan con `PATCH /auth/yo` y se reflejan al instante en la barra.
+    - El correo es de solo lectura: se corrige con una solicitud de rectificación.
+    - Se quitó el teléfono, que no existía en la cuenta.
+    - Nuevo «Cambiar contraseña» con la actual (`POST /auth/cambiar-clave`): cierra todas las sesiones y tiene un límite de 5 intentos fallidos cada 15 minutos. Una contraseña actual incorrecta responde 403, porque el cliente cierra la sesión ante un 401.
+  - **Interruptores que no hacían nada.** Se quitaron «Avisos de la comunidad» y «Perfil público», que solo se guardaban en el navegador. Los avisos se eligen con el consentimiento de comunicaciones, en Privacidad y datos.
+  - **Avisos ilegibles.** Una regla antigua de `styles.css` dejaba en blanco el texto de `.alert-card`, de cuando el aviso tenía fondo oscuro. Con el fondo claro actual no se leía, por ejemplo en «El plan Gratis no incluye cuentas de equipo» o en la ONG en verificación. Ahora el texto es oscuro y el aviso tiene margen interno aunque no lleve ícono.
+  - **Frases de cupos.** Decían «Tu plan Gratis incluye No incluye cuentas de equipo». Ahora `cupoTexto` arma «no incluye…», «incluye 3…» o «…sin límite» en Equipo, Sucursales, Publicidad y Convenios.
+  - **Orden transparente.**
+    - El Directorio del tutor seguía el orden del API (Oro primero) y marcaba «Destacado». Ahora usa el mismo orden de Explorar y marca «Patrocinado».
+    - La grilla de planes decía «Prioridad en resultados» y «Primero y con insignia Destacado». Ahora dice «Orden igual para todos», «Bloque Patrocinado» y «Primero en Patrocinado».
+  - **Textos de la demo en la versión real.** Se condicionaron a `modoDemo`:
+    - «Correos (demo)» pasa a «Correos enviados», con la explicación de que los enlaces no se guardan.
+    - Consultas decía que el intercambio se guarda en el navegador.
+    - Correos enviados del asesor decía «En esta demo no salen a internet».
+    - Planes mencionaba Orcob; ahora dice Mercado Pago o transferencia.
+  - **Documentos solo para el dueño.** El jefe de local veía Documentos, que son de la empresa. Ahora no aparecen en su menú, la pantalla le muestra «Permiso insuficiente» y el API responde 403 a quien no es el dueño.
+  - **Sucursales.** «Nueva sucursal» quedaba activo cuando el plan ya no permite otra. Ahora se desactiva y explica por qué.
+  - **Portada propia.** Desde Bronce, el negocio sube la foto de su local (con la misma reducción y sin metadatos que las fotos de mascotas), además de elegir una de muestra.
+  - **Detalles visuales.** Los selectores de los formularios tienen la misma altura que los campos de texto; a 390 px se oculta el ícono de la tarjeta de perfil, que se apretaba junto al título; y el menú usa las iniciales del nombre en vez de sus dos primeras letras.
+- Motivo: el usuario pidió repasar todos los módulos y corregir lo que no funcione con fluidez o no tenga lógica: botones, registros, paneles y banners.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 59 de 59. La paridad suma el perfil (nombre y comuna, comuna inválida, nombre corto, sin sesión), el cambio de contraseña (actual incorrecta 403, igual a la actual, demasiado corta, correcta, sesión cerrada y nuevo ingreso) y los documentos del jefe de local (403).
+  - Recorrido repetido después de los cambios, a 1366 y 390 px: sin errores de JavaScript, sin llamadas con error y sin desbordes. Se revisaron las capturas de las pantallas corregidas.
