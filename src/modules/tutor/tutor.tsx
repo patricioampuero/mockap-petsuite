@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, ArrowRight, CalendarDays, Camera, Check, ChevronRight, CirclePlus, Compass, Copy, Download, HeartHandshake, Megaphone, MessageCircle, MessagesSquare, PawPrint, Pencil, Printer, QrCode, Scissors, ShieldCheck, ShoppingBag, Stethoscope, Tag, TriangleAlert, X } from 'lucide-react'
+import { AlertCircle, ArrowRight, CalendarDays, Check, ChevronRight, CirclePlus, Compass, Copy, Download, HeartHandshake, Megaphone, MessageCircle, MessagesSquare, PawPrint, Pencil, Printer, QrCode, Scissors, ShieldCheck, ShoppingBag, Stethoscope, Tag, TriangleAlert, X } from 'lucide-react'
 import QRCode from 'qrcode'
 import { LogoMark, Photo } from '../../shared/media'
-import { subirFoto } from '../../shared/fotos'
+import { FotoEditable } from '../../shared/foto-editable'
 import { EmptyState, ErrorState, LoadingState } from '../../shared/feedback'
 import { ApiError, api, edadDesde, emptyFicha, errorText, fechaLarga, iniciales, type FichaDatos, type Mascota, type PublicaEmergencia, type PymeResumen, type RegistroMeta } from '../../shared/api'
 import { emergencyContactSchema, medicalEntrySchema, petDetailsSchema, petHealthSchema } from '../../shared/validators'
@@ -213,23 +213,7 @@ function PetsView({ pets, selected, onSelect, onMissing, target, onTargetHandled
 
 /** Foto de la mascota con botón para subirla, cambiarla o quitarla. Se ve en su ficha, en el QR y en el cartel. */
 function PetPhoto({ pet, onChanged }: { pet: Mascota; onChanged: () => Promise<void> | void }) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const asignar = async (imagenId: string | null) => { await api(`/mascotas/${pet.id}/foto`, { method: 'PUT', body: { imagen_id: imagenId } }); await onChanged() }
-  const elegir = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const archivo = event.target.files?.[0]
-    event.target.value = ''
-    if (!archivo) return
-    setBusy(true); setError('')
-    try { await asignar((await subirFoto(archivo)).id) } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
-  }
-  const quitar = async () => { setBusy(true); setError(''); try { await asignar(null) } catch (e) { setError(errorText(e)) } finally { setBusy(false) } }
-  return <div className="pet-photo-editor">
-    <Photo src={pet.foto_url} nombre={pet.nombre} className="pet-photo large" />
-    <label className={`pet-photo-change${busy ? ' is-busy' : ''}`}><Camera size={14} aria-hidden="true" /> {busy ? 'Subiendo…' : pet.foto_url ? 'Cambiar foto' : 'Agregar foto'}<input className="sr-only" type="file" accept="image/*" disabled={busy} onChange={elegir} /></label>
-    {pet.foto_url && !busy && <button type="button" className="text-button pet-photo-remove" onClick={quitar}>Quitar foto</button>}
-    {error && <p className="form-error" role="alert">{error}</p>}
-  </div>
+  return <FotoEditable src={pet.foto_url} nombre={pet.nombre} asignar={async imagenId => { await api(`/mascotas/${pet.id}/foto`, { method: 'PUT', body: { imagen_id: imagenId } }); await onChanged() }} />
 }
 
 function PetDetail({ pet, onQr, onEdit, onHealth, onAddEntry, onEditEntry, onChanged }: { pet: Mascota; onQr: () => void; onEdit: () => void; onHealth: (field?: 'allergies' | 'conditions') => void; onAddEntry: () => void; onEditEntry: (entry: Entry) => void; onChanged: () => Promise<void> | void }) {

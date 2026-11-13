@@ -15,21 +15,44 @@ const aBase64 = (blob: Blob) => new Promise<string>((resolve, reject) => {
   lector.readAsDataURL(blob)
 })
 
+const NO_SE_ABRE = 'No pudimos abrir esa foto. Prueba con otra en JPG o PNG.'
+
+/** Abre la foto respetando su orientación. Si el navegador no puede con createImageBitmap (Safari antiguo), usa <img>. */
+async function abrirImagen(archivo: File): Promise<{ fuente: CanvasImageSource; ancho: number; alto: number; cerrar: () => void }> {
+  try {
+    const b = await createImageBitmap(archivo, { imageOrientation: 'from-image' })
+    return { fuente: b, ancho: b.width, alto: b.height, cerrar: () => b.close() }
+  } catch {
+    const url = URL.createObjectURL(archivo)
+    try {
+      const img = new Image()
+      img.src = url
+      await img.decode()
+      if (!img.naturalWidth) throw new Error(NO_SE_ABRE)
+      return { fuente: img, ancho: img.naturalWidth, alto: img.naturalHeight, cerrar: () => URL.revokeObjectURL(url) }
+    } catch {
+      URL.revokeObjectURL(url)
+      throw new Error(NO_SE_ABRE)
+    }
+  }
+}
+
 /**
  * Reduce la foto (lado mayor de 1280 px; 720 px en la demo, que guarda todo en el navegador) y la deja en JPEG.
  * Un documento fotografiado usa un lado mayor más grande para que se pueda leer.
  */
 export async function prepararFoto(archivo: File, { ladoMax: lado, maxBytes = MAX_BYTES_IMAGEN }: { ladoMax?: number; maxBytes?: number } = {}): Promise<{ datos: string; tipo: 'image/jpeg' }> {
-  if (!archivo.type.startsWith('image/')) throw new Error('Elige una foto (JPG, PNG o WebP)')
+  // Algunas galerías de Android entregan la foto sin tipo: en ese caso se intenta abrir igual.
+  if (archivo.type && !archivo.type.startsWith('image/')) throw new Error('Elige una foto (JPG, PNG o WebP)')
   if (archivo.size > 30_000_000) throw new Error('La foto es demasiado grande')
-  const imagen = await createImageBitmap(archivo, { imageOrientation: 'from-image' }).catch(() => { throw new Error('No pudimos abrir esa foto. Prueba con otra en JPG o PNG.') })
+  const imagen = await abrirImagen(archivo)
   const ladoMax = lado ?? (modoDemo ? 720 : 1280)
-  const escala = Math.min(1, ladoMax / Math.max(imagen.width, imagen.height))
+  const escala = Math.min(1, ladoMax / Math.max(imagen.ancho, imagen.alto))
   const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(imagen.width * escala))
-  canvas.height = Math.max(1, Math.round(imagen.height * escala))
-  canvas.getContext('2d')!.drawImage(imagen, 0, 0, canvas.width, canvas.height)
-  imagen.close()
+  canvas.width = Math.max(1, Math.round(imagen.ancho * escala))
+  canvas.height = Math.max(1, Math.round(imagen.alto * escala))
+  canvas.getContext('2d')!.drawImage(imagen.fuente, 0, 0, canvas.width, canvas.height)
+  imagen.cerrar()
   let calidad = modoDemo ? 0.72 : 0.82
   let blob = await aBlob(canvas, calidad)
   while (blob.size > maxBytes * 0.9 && calidad > 0.4) { calidad -= 0.12; blob = await aBlob(canvas, calidad) }

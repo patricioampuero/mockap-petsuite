@@ -3,7 +3,7 @@
 import { z } from 'zod'
 import type { FichaDatos } from '../../src/shared/api'
 import { correoAvisoQr } from '../../src/shared/avisos'
-import { IMAGEN_AJENA, idDeUrlImagen, urlImagen } from '../../src/shared/imagenes'
+import { fotoPropia, liberarImagen } from './imagenes'
 import { auth, baseApp, enviarCorreo, type Usuario } from './auth'
 import { fail, fecha, idDe, now, on, parse, porTexto, uid, una, type Req } from './core'
 import type { Sql } from './db'
@@ -80,19 +80,9 @@ on('POST', '/mascotas', async req => {
 on('PUT', '/mascotas/:id/foto', async req => {
   const [u, m] = await propia(req, true)
   const d = parse(z.object({ imagen_id: z.string().max(60).nullable() }), req.body)
-  let url: string | null = null
-  if (d.imagen_id) {
-    const i = await una<{ id: string }>(req.sql, 'select id from imagenes where id = $1 and dueno_id = $2', [idDe(d.imagen_id), u.id])
-    if (!i) return fail(404, IMAGEN_AJENA)
-    url = urlImagen(i.id)
-  }
-  const anterior = idDeUrlImagen(m.foto_url)
+  const url = d.imagen_id ? await fotoPropia(req.sql, d.imagen_id, u.id) : null
   await req.sql('update mascotas set foto_url = $2 where id = $1', [m.id, url])
-  if (anterior && m.foto_url !== url) {
-    await req.sql(`delete from imagenes i where i.id = $1 and i.dueno_id = $2
-      and not exists (select 1 from publicaciones p where p.foto_url = $3) and not exists (select 1 from mascotas x where x.foto_url = $3)
-      and not exists (select 1 from animales a where a.foto_url = $3)`, [anterior, u.id, m.foto_url])
-  }
+  if (m.foto_url !== url) await liberarImagen(req.sql, m.foto_url, u.id)
   return { foto_url: url }
 })
 

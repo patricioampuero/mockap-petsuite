@@ -106,7 +106,7 @@ export type SucursalPublica = { id: string; nombre: string; comuna: string; dire
 export type CuponPublico = { codigo: string; titulo: string; descuento_pct: number; condiciones: string; hasta: string; ong: string; ong_id: string; negocio?: string; pyme_id?: string }
 // Oferta referencial por un rango de fechas (AAAA-MM-DD). No hay cobros dentro de la app.
 export type Oferta = { precio_clp: number; desde: string; hasta: string }
-export type ItemCatalogo = { id: string; tipo: 'producto' | 'servicio'; nombre: string; descripcion: string | null; precio_referencial_clp: number | null; disponible?: boolean; categoria?: string | null; sin_stock?: boolean; oferta?: Oferta | null }
+export type ItemCatalogo = { id: string; tipo: 'producto' | 'servicio'; nombre: string; descripcion: string | null; precio_referencial_clp: number | null; disponible?: boolean; categoria?: string | null; sin_stock?: boolean; oferta?: Oferta | null; foto_url?: string | null }
 
 export const hoy = () => new Date().toISOString().slice(0, 10)
 export const ofertaVigente = (o?: Oferta | null) => !!o && o.desde <= hoy() && o.hasta >= hoy()

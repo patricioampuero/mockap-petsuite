@@ -32,7 +32,7 @@ export type Sucursal = { id: string; pyme_id: string; nombre: string; comuna_id:
 // Equipo interno: cuentas de jefes de local o personal clínico con permisos por módulo. sucursal_id null = casa matriz.
 export type Miembro = { id: string; pyme_id: string; usuario_id: string; rol: RolEquipo; sucursal_id: string | null; permisos: ModuloPyme[]; creado_en: string }
 export type ContactoPyme = { id: string; pyme_id: string; remitente_id: string; remitente_nombre: string; remitente_contacto: string | null; mensaje: string; estado: 'nuevo' | 'leido' | 'respondido'; respuesta: string | null; creado_en: string; respondido_en: string | null }
-export type Item = { id: string; pyme_id: string; tipo: 'producto' | 'servicio'; nombre: string; descripcion: string | null; precio_referencial_clp: number | null; disponible: boolean; categoria: string | null; sin_stock: boolean; oferta: Oferta | null; creado_en: string }
+export type Item = { id: string; pyme_id: string; tipo: 'producto' | 'servicio'; nombre: string; descripcion: string | null; precio_referencial_clp: number | null; disponible: boolean; categoria: string | null; sin_stock: boolean; oferta: Oferta | null; foto_url: string | null; creado_en: string }
 export type EventoPyme = { id: string; pyme_id: string; item_id: string | null; tipo: 'visita_perfil' | 'vista_item' | 'clic_contacto' | 'clic_whatsapp'; ocurrido_en: string }
 export type Suscripcion = { id: string; pyme_id: string; plan_id: number; inicio: string; fin: string; estado: 'pendiente' | 'activa' | 'vencida' | 'cancelada' }
 export type Pago = { id: string; suscripcion_id: string; monto_clp: number; canal: 'transferencia' | 'orcob' | 'mercadopago'; referencia: string | null; codigo_orcob?: string | null; estado: 'pendiente' | 'confirmado' | 'rechazado'; pagado_en: string }
@@ -48,11 +48,13 @@ export type Comentario = { id: string; autor_id: string; publicacion_id: string;
 export type Reaccion = { publicacion_id: string; usuario_id: string }
 export type Guardado = { publicacion_id: string; usuario_id: string }
 export type Reporte = { id: string; reportante_id: string; objeto_tipo: 'publicacion' | 'comentario'; objeto_id: string; motivo: string; estado: 'abierto' | 'resuelto_ocultado' | 'resuelto_mantenido'; creado_en: string }
-// Perfil público editable por la ONG (CMS sin imágenes). Lo publicado es la última versión aprobada por el asesor.
+// Perfil público editable por la ONG, con una portada opcional. Lo publicado es la última versión aprobada por el asesor.
 export type OngPerfil = {
   mision: string; como_ayudar: string; necesidades: string[]; voluntariado: string; horario_visitas: string
   donaciones: { banco: string; tipo_cuenta: string; numero: string; titular: string; rut: string; correo: string } | null
   emblema: 'heart' | 'paw' | 'home' | 'shield'; color: 'acento' | 'calido' | 'info' | 'vino'
+  /** Foto de portada (subida por la ONG); sin ella, el perfil muestra su emblema. */
+  foto_portada?: string | null
 }
 export type Ong = {
   id: string; propietario_id: string; nombre: string; tipo: 'refugio' | 'rescatista_independiente' | 'agrupacion'; descripcion: string | null; comuna_id: number; contacto: string | null; redes_sociales: string | null
@@ -204,7 +206,7 @@ function seed(): Db {
     ['Arnés ajustable', 'Arnés acolchado talla M', 12990, 'producto', 'Accesorios', { precio_clp: 10990, desde: dayOffset(0), hasta: dayOffset(14) }],
     ['Shampoo hipoalergénico', 'Para pieles sensibles', 7990, 'producto', 'Higiene', null],
     ['Baño y corte', 'Servicio de peluquería', 18000, 'servicio', 'Servicios', null],
-  ] as const) db.catalogo.push({ id: uid(), pyme_id: shop, tipo, nombre, descripcion, precio_referencial_clp: precio, disponible: true, categoria, sin_stock: false, oferta: oferta ? { ...oferta } : null, creado_en: t() })
+  ] as const) db.catalogo.push({ id: uid(), pyme_id: shop, tipo, nombre, descripcion, precio_referencial_clp: precio, disponible: true, categoria, sin_stock: false, oferta: oferta ? { ...oferta } : null, foto_url: null, creado_en: t() })
 
   const luna: MascotaRow = {
     id: uid(), tutor_id: tutor, nombre: 'Luna', especie: 'perro', raza: 'Labrador', sexo: 'hembra', fecha_nacimiento: null, foto_url: '/img/perro-retrato.jpg', ficha_version: 1, creado_en: t(),

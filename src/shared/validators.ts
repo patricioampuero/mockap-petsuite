@@ -80,6 +80,12 @@ export const userSuspensionSchema = z.object({
   mensaje: z.string().trim().min(10, 'Explica la decisión en al menos 10 caracteres').max(1000, 'El mensaje no puede superar 1000 caracteres'),
 }).refine(data => data.tipo === 'temporal' ? data.dias !== null : data.dias === null, 'Indica los días solo para la suspensión temporal')
 
+/** Una foto subida por el usuario: /api/v1/imagenes/<id> en el API; data: URL en la demo. */
+export const fotoSubidaSchema = z.union([
+  z.string().regex(/^\/api\/v1\/imagenes\/[0-9a-f-]{36}$/),
+  z.string().max(900_000).regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/),
+], { message: 'Foto no válida' })
+
 export const businessProfileSchema = z.object({
   nombre_comercial: z.string().trim().min(2, 'Ingresa el nombre del negocio').max(100),
   descripcion: z.string().trim().max(1000),

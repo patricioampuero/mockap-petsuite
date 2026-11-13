@@ -103,9 +103,13 @@ Con un dominio propio, fija `APP_URL` con ese dominio y redirige `<proyecto>.ver
 
 ### Datos de demostración en la versión real
 
-Para presentar PetSuite en www.petsuite.space sin crear cuentas a mano, `backend/db/demo-presentacion.mjs` carga los datos de la demo (los mismos de GitHub Pages) junto a los reales, y después los quita.
+Para presentar PetSuite en www.petsuite.space sin crear cuentas a mano, `backend/db/demo-presentacion.mjs` carga datos de demostración junto a los reales, y después los quita. Son filas reales de la base: se ven en Explorar, Adopciones y el muro como cualquier otra.
+
+**Antes de cargar, aplica todas las migraciones** (`backend/db/migrate.mjs`, hasta la 012). Sin la 008 no existe la tabla de fotos: ni la carga ni la subida de fotos funcionan.
 
 ```bash
+# 0. Migraciones
+node --env-file=.env.production.local backend/db/migrate.mjs
 # 1. Simulación: muestra qué cargaría, sin escribir nada
 node --env-file=.env.production.local backend/db/demo-presentacion.mjs --clave "una-clave-larga-2026"
 # 2. Cargar
@@ -115,7 +119,9 @@ node --env-file=.env.production.local backend/db/demo-presentacion.mjs --quitar 
 ```
 
 - Todas las cuentas terminan en `@demo.petsuite.space` y usan la clave que indicas (10 caracteres o más). El API no les envía correos reales: quedan en la bandeja.
-- Cuentas: `tutor@` (Luna con su medalla QR), `tutor2@`, `veterinaria@` (Oro), `clinico@`, `tienda@` (Plata), `jefe@`, `peluqueria@` (bajó a Gratis), `ong@` (Patitas del Sur), `ong2@` y `nuevo@`, un negocio en verificación sin documentos para mostrar la subida y la revisión.
+- Cuentas de la demo de GitHub Pages: `tutor@` (Luna con su medalla QR), `tutor2@`, `veterinaria@` (Oro), `clinico@`, `tienda@` (Plata), `jefe@`, `peluqueria@` (bajó a Gratis), `ong@` (Patitas del Sur), `ong2@` y `nuevo@`, un negocio en verificación sin documentos para mostrar la subida y la revisión.
+- Además, `backend/db/demo-poblar.mjs` agrega una comunidad completa en 10 comunas de Los Lagos: 22 tutores con 27 mascotas (cada una con foto y medalla), 6 negocios con portada, catálogo, ofertas y consultas (`paola.andrade@` es Veterinaria Volcán, Oro), 3 ONG con portada y 9 animales en adopción (uno prioritario por ONG) y solicitudes, unas 23 publicaciones en el muro con comentarios y apoyos, convenios con canjes y banners. Las cuentas usan nombre.apellido, por ejemplo `camila.fuentes@demo.petsuite.space` (tutora) o `francisca.gomez@demo.petsuite.space` (ONG Huellas de Chiloé).
+- Las fotos (de Pexels, licencia libre, créditos en `backend/db/demo-fotos/CREDITOS.md`) se guardan en la tabla `imagenes`, como si cada persona las hubiera subido.
 - No crea administradores ni asesores, porque tendrían acceso a los datos reales. La revisión de documentos y pagos se hace con la cuenta real del administrador.
 - Los negocios y las ONG llevan «(demo)» en el nombre, porque se ven en Explorar. Quítalos al terminar.
 - `--quitar` borra las cuentas del dominio de demostración y todo lo que depende de ellas (también lo que hicieron durante la presentación), siguiendo las claves foráneas. Nunca toca otras cuentas.

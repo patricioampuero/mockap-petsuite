@@ -7,6 +7,7 @@ import { db, now, uid, dayOffset, VERSION_PRIVACIDAD, type Animal, type Banner, 
 import { DIAS_DERIVAR_COBRANZA, ONG_CUPOS, planPorId, type Limites, type Plan } from '../modules/plans/plans'
 import { ROLES_EQUIPO, type ModuloPyme, type Rol } from '../shared/permissions'
 import { derivarCobranza } from './orcob'
+import { fotoSubidaSchema } from '../shared/validators'
 import { ENLACE_INVALIDO, VIGENCIA_HORAS, correoCuentaCreada, correoEquipo, enlaceCuenta, type TipoToken } from '../shared/cuentas'
 
 type Req = { params: Record<string, string>; query: URLSearchParams; body: unknown; session: Session | null }
@@ -412,6 +413,8 @@ export function registerSuiteRoutes(ctx: Ctx) {
     }).nullable().default(null),
     emblema: z.enum(['heart', 'paw', 'home', 'shield']).default('heart'),
     color: z.enum(['acento', 'calido', 'info', 'vino']).default('acento'),
+    // Portada opcional: una foto subida por la ONG. Pasa por la misma revisión del asesor que el resto del perfil.
+    foto_portada: fotoSubidaSchema.nullable().default(null),
   })
   on('GET', '/ong/perfil', req => {
     const o = miOng(req)

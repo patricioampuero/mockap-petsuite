@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { auth, type Usuario } from './auth'
 import { dayOffset, fail, fecha, hace, idDe, now, on, parse, sinEnlaces, uid, una, type Req } from './core'
 import type { Row, Sql } from './db'
+import { fotoPropia } from './imagenes'
 
 type Publicacion = {
   id: string; autor_id: string; comuna_id: number; mascota_id: string | null; animal_id: string | null; tipo: 'extravio' | 'encuentro' | 'recomendacion' | 'alerta' | 'evento' | 'adopcion'; texto: string
@@ -58,6 +59,8 @@ const publicacionSchema = z.object({
   animal_id: z.string().optional(),
   sector: z.string().trim().max(80, 'El sector admite hasta 80 caracteres').refine(sinEnlaces, 'No se permiten enlaces externos').optional(),
   fecha_evento: fecha.optional(),
+  // Foto subida por el autor (POST /imagenes). En un extravío reemplaza a la foto de la mascota.
+  imagen_id: z.string().max(60).optional(),
 })
 
 on('POST', '/muro', async req => {
@@ -79,7 +82,8 @@ on('POST', '/muro', async req => {
     if (d.mascota_id && m?.tutor_id !== u.id) return fail(403, 'La mascota no es tuya')
     if (d.tipo === 'evento' && !d.fecha_evento) return fail(400, 'Indica la fecha del evento')
     if (d.tipo === 'evento' && d.fecha_evento! < dayOffset(0)) return fail(400, 'La fecha del evento ya pasó')
-    Object.assign(p, { comuna_id: u.comuna_id, mascota_id: d.tipo === 'extravio' ? m?.id ?? null : null, foto_url: d.tipo === 'extravio' ? m?.foto_url ?? null : null, fecha_evento: d.tipo === 'evento' ? d.fecha_evento! : null })
+    const foto = d.imagen_id ? await fotoPropia(req.sql, d.imagen_id, u.id) : null
+    Object.assign(p, { comuna_id: u.comuna_id, mascota_id: d.tipo === 'extravio' ? m?.id ?? null : null, foto_url: foto ?? (d.tipo === 'extravio' ? m?.foto_url ?? null : null), fecha_evento: d.tipo === 'evento' ? d.fecha_evento! : null })
   }
   await req.sql(`insert into publicaciones (id, autor_id, comuna_id, mascota_id, animal_id, tipo, texto, sector, foto_url, fecha_evento, estado, creado_en)
     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, [p.id, p.autor_id, p.comuna_id, p.mascota_id, p.animal_id, p.tipo, p.texto, p.sector, p.foto_url, p.fecha_evento, p.estado, p.creado_en])

@@ -1249,3 +1249,27 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - Los guiones quedan fuera del repositorio, porque el equipo descartó las pruebas e2e con Playwright (FE-08).
 - Motivo: el usuario pidió seguir repasando que todo funcione con fluidez: botones, registros, paneles y banners.
 - Verificación ejecutada: `npx tsc -b` sin errores, `npm run build -- --base=/mockap-petsuite/` correcto y `npm test` 59 de 59. Los 28 flujos funcionan en la build real.
+### Demostración poblada en la base real y fotos para todos los roles
+
+- Fecha: 2026-11-13.
+- Rama: `patricioampuero/demo-poblada`, creada sobre `patricioampuero/flujos-modulos`. Se fusiona después de ella.
+- Archivos agregados: `backend/db/demo-poblar.mjs`, `backend/db/demo-fotos/` (42 fotos de Pexels y `CREDITOS.md`), `backend/db/migrations/012_foto_catalogo.sql` y `src/shared/foto-editable.tsx`.
+- Archivos modificados: `backend/db/demo-presentacion.mjs`, `backend/api/{imagenes,ficha,adopcion,muro,pymes,negocio,promocion}.ts`, `backend/api/paridad.test.mjs`, `src/mock/{server,db,suite}.ts`, `src/shared/{api,fotos,validators}.ts`, `src/modules/{community/community,business/business,directory/directory,ong/adoption,ong/ong-profile,tutor/tutor}.tsx`, `src/styles/design-pro.css`, `backend/README.md` y `Agents.md`.
+- Cambio realizado:
+  - **Demostración poblada.** `demo-presentacion.mjs` suma, con `demo-poblar.mjs`, una comunidad en 10 comunas de Los Lagos: 22 tutores con 27 mascotas (foto y medalla), 6 negocios de los cuatro planes con portada, catálogo con fotos, ofertas y consultas, 3 ONG con portada y 9 animales en adopción (uno prioritario por ONG) con solicitudes, unas 23 publicaciones con comentarios y apoyos, convenios con canjes y banners. Son filas reales de la base; las fotos se guardan en `imagenes`, como si cada persona las hubiera subido. `--quitar` las borra con todo lo demás.
+  - **Fotos para todos los roles.** Antes solo el tutor (su mascota) y el negocio (su portada) subían fotos. Ahora también:
+    - El tutor agrega una foto opcional a su publicación del muro. En un extravío reemplaza a la foto de la mascota.
+    - El negocio agrega una foto a cada producto o servicio del catálogo (migración 012). La foto se ve en su vitrina pública.
+    - La ONG sube la foto de cada animal, al publicarlo o después, y una portada para su perfil público, que pasa por la revisión del asesor como el resto del perfil.
+  - **Reglas comunes de fotos** (`backend/api/imagenes.ts` y el mock): solo se usa una foto subida por la misma persona (404 si es de otra). La foto anterior se borra cuando ya nada la muestra. Las fotos elegidas en un formulario que nunca se guardó dejan de contar para el límite de 40 al día siguiente.
+  - **Foto más tolerante en el teléfono.** Se acepta una foto que la galería entrega sin tipo (pasa en algunos Android). Si el navegador no abre la foto con `createImageBitmap` (Safari antiguo), se abre como imagen.
+  - Componente común `FotoEditable` (subir, cambiar y quitar), que ahora usan la mascota, el animal y el producto, y `FotoOpcional` para los formularios que aún no se guardan.
+- Motivo: el usuario pidió muchas más cuentas de demostración con imágenes libres, adopciones e interacciones en el muro, guardadas como datos reales en la base. También pidió que tutores, negocios y ONG puedan agregar fotos.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores, `npm run build -- --base=/mockap-petsuite/` correcto y `npm test` 59 de 59. La paridad compara las rutas nuevas, y también la foto en el muro, el catálogo y el perfil de la ONG.
+  - Con Playwright, sobre la build real contra el API real con PGlite y la demo poblada, funcionan estos flujos:
+    - El tutor publica en el muro con foto y cambia la foto de su mascota.
+    - El negocio pone y quita la foto de un producto, que se ve en su vitrina pública.
+    - La ONG cambia la foto de un animal, publica uno nuevo con foto y guarda la portada.
+    - A 390 px de ancho no hay desborde horizontal.
+- Pendiente en la base real: aplicar las migraciones 008 a 012 antes de cargar la demostración. Sin la 008 no existe la tabla de fotos, y eso explica que no se pudieran subir imágenes.
