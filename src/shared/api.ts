@@ -26,10 +26,17 @@ const apiUrl = import.meta.env?.VITE_API_URL?.replace(/\/+$/, '')
 export const recursoApi = (ruta: string) => apiUrl && /^https?:\/\//.test(apiUrl) ? `${new URL(apiUrl).origin}${ruta}` : ruta
 
 async function remote<T>(path: string, method: string, body: unknown, session: Session | null): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`, {
+  const pedir = () => fetch(`${apiUrl}${path}`, {
     method,
     headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(session ? { Authorization: `Bearer ${session.token}` } : {}) },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  })
+  // Una consulta (GET) se reintenta una vez si falla la red: en el teléfono la señal se corta, y una conexión reutilizada
+  // puede cerrarse justo al enviarla. Lo que cambia datos no se repite, para no duplicarlo.
+  const response = await pedir().catch(async error => {
+    if (method !== 'GET') throw error
+    await new Promise(resolve => setTimeout(resolve, 400))
+    return pedir()
   })
   if (response.status === 204) return undefined as T
   const payload = await response.json().catch(() => null) as { message?: string; error?: string } | null

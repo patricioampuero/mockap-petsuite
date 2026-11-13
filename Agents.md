@@ -1230,3 +1230,22 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
   - `npm test`: 59 de 59. La paridad suma el perfil (nombre y comuna, comuna inválida, nombre corto, sin sesión), el cambio de contraseña (actual incorrecta 403, igual a la actual, demasiado corta, correcta, sesión cerrada y nuevo ingreso) y los documentos del jefe de local (403).
   - Recorrido repetido después de los cambios, a 1366 y 390 px: sin errores de JavaScript, sin llamadas con error y sin desbordes. Se revisaron las capturas de las pantallas corregidas.
+
+### Flujos completos de cada rol en la versión real y reintento de consultas
+
+- Fecha: 2026-11-13.
+- Rama: `patricioampuero/flujos-modulos`, creada sobre `patricioampuero/repaso-modulos`. Se fusiona después de ella.
+- Archivos modificados: `src/shared/api.ts` y `Agents.md`.
+- Cambio realizado:
+  - **Reintento de consultas.** Si una consulta (GET) al API falla por la red, el cliente la repite una vez a los 400 ms. En el teléfono la señal se corta, y una conexión reutilizada puede cerrarse justo al enviarla: antes eso mostraba «No pudimos cargar la información». Lo que cambia datos (POST, PUT, PATCH, DELETE) no se repite, para no duplicarlo.
+  - **Recorrido de flujos.** Con Playwright, sobre la build real contra el API real con PGlite, se llenaron los formularios y se apretaron los botones de 28 flujos. Todos funcionan:
+    - Tutor: agregar mascota, editar la salud, ver el QR, publicar en el muro, consultar a un negocio, pedir una rectificación, comentar y apoyar, reportar.
+    - Visitante sin cuenta: avisar al tutor desde el QR y pedir una adopción.
+    - Pyme: agregar al catálogo, responder la consulta, editar el perfil, crear un banner, proponer un convenio, registrar un canje.
+    - Registro de una Pyme nueva: confirmación de correo, alta del negocio, subida de los tres documentos y aprobación del administrador. El negocio aparece en Explorar.
+    - ONG: publicar un animal, aceptar el convenio, revisar la solicitud de adopción, difundir en el muro.
+    - Asesor: aprobar el banner y el convenio, crear la cuenta de una Pyme.
+    - Administrador: responder la solicitud de privacidad y moderar el reporte.
+  - Los guiones quedan fuera del repositorio, porque el equipo descartó las pruebas e2e con Playwright (FE-08).
+- Motivo: el usuario pidió seguir repasando que todo funcione con fluidez: botones, registros, paneles y banners.
+- Verificación ejecutada: `npx tsc -b` sin errores, `npm run build -- --base=/mockap-petsuite/` correcto y `npm test` 59 de 59. Los 28 flujos funcionan en la build real.
