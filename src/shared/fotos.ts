@@ -15,12 +15,15 @@ const aBase64 = (blob: Blob) => new Promise<string>((resolve, reject) => {
   lector.readAsDataURL(blob)
 })
 
-/** Reduce la foto (lado mayor de 1280 px; 720 px en la demo, que guarda todo en el navegador) y la deja en JPEG. */
-export async function prepararFoto(archivo: File): Promise<{ datos: string; tipo: 'image/jpeg' }> {
+/**
+ * Reduce la foto (lado mayor de 1280 px; 720 px en la demo, que guarda todo en el navegador) y la deja en JPEG.
+ * Un documento fotografiado usa un lado mayor más grande para que se pueda leer.
+ */
+export async function prepararFoto(archivo: File, { ladoMax: lado, maxBytes = MAX_BYTES_IMAGEN }: { ladoMax?: number; maxBytes?: number } = {}): Promise<{ datos: string; tipo: 'image/jpeg' }> {
   if (!archivo.type.startsWith('image/')) throw new Error('Elige una foto (JPG, PNG o WebP)')
   if (archivo.size > 30_000_000) throw new Error('La foto es demasiado grande')
   const imagen = await createImageBitmap(archivo, { imageOrientation: 'from-image' }).catch(() => { throw new Error('No pudimos abrir esa foto. Prueba con otra en JPG o PNG.') })
-  const ladoMax = modoDemo ? 720 : 1280
+  const ladoMax = lado ?? (modoDemo ? 720 : 1280)
   const escala = Math.min(1, ladoMax / Math.max(imagen.width, imagen.height))
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, Math.round(imagen.width * escala))
@@ -29,9 +32,12 @@ export async function prepararFoto(archivo: File): Promise<{ datos: string; tipo
   imagen.close()
   let calidad = modoDemo ? 0.72 : 0.82
   let blob = await aBlob(canvas, calidad)
-  while (blob.size > MAX_BYTES_IMAGEN * 0.9 && calidad > 0.4) { calidad -= 0.12; blob = await aBlob(canvas, calidad) }
+  while (blob.size > maxBytes * 0.9 && calidad > 0.4) { calidad -= 0.12; blob = await aBlob(canvas, calidad) }
   return { datos: await aBase64(blob), tipo: 'image/jpeg' }
 }
+
+/** Un archivo cualquiera (por ejemplo, un PDF) en base64, sin el prefijo data:. */
+export const archivoBase64 = (archivo: Blob) => aBase64(archivo)
 
 /** Prepara y sube la foto; devuelve su id (para asociarla) y su dirección. */
 export async function subirFoto(archivo: File): Promise<FotoSubida> {

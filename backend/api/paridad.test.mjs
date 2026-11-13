@@ -82,6 +82,9 @@ function cliente(handle) {
 // Corre el guion contra ambos backends con los mismos datos y compara paso a paso.
 // Fotos de prueba: un JPEG mínimo sin metadatos y el mismo con un bloque EXIF (datos de cámara o ubicación).
 const JPEG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA='
+// Documentos de prueba: un PDF y un PNG mínimos.
+const PDF = Buffer.from('%PDF-1.4\n1 0 obj <<>> endobj\ntrailer <<>>\n%%EOF\n').toString('base64')
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('datos de prueba')]).toString('base64')
 const JPEG_EXIF = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x10]), Buffer.from('Exif\0\0'), Buffer.alloc(8), Buffer.from(JPEG, 'base64').subarray(2)]).toString('base64')
 
 // Ficha con información pública: la demo no trae ninguna (solo existen en la versión real), así que la prueba
@@ -419,6 +422,37 @@ test('directorio y Pymes: perfil, consultas, catálogo, métricas, suscripción,
     await call('GET', '/pymes/mias', undefined, 'nueva')
     await call('POST', `/pymes/${gateria.id}/catalogo`, { tipo: 'producto', nombre: 'Rascador', precio_referencial_clp: 20000 }, 'nueva')
     await call('POST', `/pymes/${gateria.id}/suscripcion`, { plan_id: 3, canal: 'orcob' }, 'nueva')
+
+    // Documentos de validación: sin ellos el alta no se aprueba. El RUT 76.999.888 es de empresa, así que también
+    // se pide la constitución. El asesor descarga, aprueba o pide corregir; el archivo nunca es público.
+    await call('GET', `/pymes/${gateria.id}/documentos`, undefined, 'nueva')
+    await call('PATCH', `/admin/pymes/${gateria.id}/verificacion`, { decision: 'aprobar' }, 'asesor')
+    const doc = (tipo, nombre, mime, datos, quien = 'nueva') => call('PUT', `/pymes/${gateria.id}/documentos/${tipo}`, { nombre, mime, datos }, quien)
+    await doc('patente_comercial', 'patente.pdf', 'application/pdf', PDF, 'tutor')
+    await doc('patente_comercial', 'patente.pdf', 'application/pdf', PDF, 'tienda')
+    await doc('otro', 'patente.pdf', 'application/pdf', PDF)
+    await doc('patente_comercial', 'patente.pdf', 'application/pdf', JPEG)
+    await doc('patente_comercial', 'patente.txt', 'text/plain', PDF)
+    await doc('patente_comercial', 'patente.pdf', 'application/pdf', 'no es base64 !')
+    await doc('patente_comercial', 'documentos/patente 2026.pdf', 'application/pdf', PDF)
+    await doc('resolucion_sanitaria', 'resolucion.jpg', 'image/jpeg', JPEG)
+    const { data: docs } = await call('GET', `/admin/pymes/${gateria.id}/documentos`, undefined, 'asesor')
+    await call('GET', `/admin/pymes/${gateria.id}/documentos`, undefined, 'tutor')
+    await call('GET', '/admin/pymes/no-existe/documentos', undefined, 'asesor')
+    await call('PATCH', `/admin/pymes/${gateria.id}/verificacion`, { decision: 'aprobar' }, 'asesor')
+    const patente = docs.documentos.find(d => d.tipo === 'patente_comercial').archivo.id
+    await call('GET', `/admin/documentos/${patente}/archivo`, undefined, 'asesor')
+    await call('GET', `/admin/documentos/${patente}/archivo`, undefined, 'nueva')
+    await call('GET', '/admin/documentos/no-existe/archivo', undefined, 'asesor')
+    await call('GET', `/pymes/${gateria.id}/documentos/${patente}/archivo`, undefined, 'nueva')
+    await call('GET', `/pymes/${shop}/documentos/${patente}/archivo`, undefined, 'tienda')
+    await call('PATCH', `/admin/documentos/${patente}`, { decision: 'rechazar', motivo: 'corta' }, 'asesor')
+    await call('PATCH', `/admin/documentos/${patente}`, { decision: 'rechazar', motivo: 'La patente está vencida: sube la del año 2026.' }, 'asesor')
+    await call('PATCH', '/admin/documentos/no-existe', { decision: 'aprobar' }, 'asesor')
+    await doc('constitucion_sociedad', 'constitucion.png', 'image/png', PNG)
+    await call('PATCH', `/admin/pymes/${gateria.id}/verificacion`, { decision: 'aprobar' }, 'asesor')
+    await doc('patente_comercial', 'patente-2026.pdf', 'application/pdf', PDF)
+    await call('GET', '/pymes/mias', undefined, 'nueva')
     await call('GET', '/admin/pymes', undefined, 'asesor')
     await call('GET', '/admin/pymes', undefined, 'tutor')
     await call('PATCH', `/admin/pymes/${gateria.id}/verificacion`, { decision: 'aprobar' }, 'asesor')

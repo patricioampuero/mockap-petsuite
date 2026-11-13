@@ -2,6 +2,8 @@
 import { z } from 'zod'
 import { DIAS_PERIODO, PLANES, PLAN_GRATIS, planPorId } from '../../src/modules/plans/plans'
 import { FICHA_PUBLICA_SIN_DUENO } from '../../src/shared/fichas'
+import { documentosFaltantes } from '../../src/shared/documentos'
+import { aprobarDocumentos, documentosDe } from './documentos'
 import { userSuspensionSchema } from '../../src/shared/validators'
 import { auth, cerrarSesiones, correoDe, enviarCorreo, levantarVencidas } from './auth'
 import { comunasDe, dayOffset, fail, hace, idDe, now, on, parse, uid, una } from './core'
@@ -141,23 +143,27 @@ on('GET', '/admin/pymes', async req => {
     const pend = pagos.find(pg => pg.pyme_id === p.id && pg.estado === 'pendiente')
     const pago = pend ?? (s && pagos.find(pg => pg.suscripcion_id === s.id))
     const sub = pago && lista.find(x => x.id === pago.suscripcion_id)
-    const uso = await usoPyme(req.sql, p.id)
+    const uso = await usoPyme(req.sql, p.id), docs = await documentosDe(req.sql, p)
     resultado.push({
       id: p.id, nombre_comercial: p.nombre_comercial, rut_empresa: p.rut_empresa, rubro: p.rubro, comuna: comunas.get(p.comuna_id) ?? '', estado_verificacion: p.estado_verificacion,
       solicitud: p.estado_verificacion === 'aprobada' && pend ? 'renovacion' : 'alta', plan: sub ? planPorId(sub.plan_id).nombre : PLAN_GRATIS.nombre,
       plan_vigente: estadoPlanDe(lista).plan.nombre, canal: pago?.canal ?? null, referencia: pago?.referencia ?? null, monto_clp: pago?.monto_clp ?? 0,
       sucursales: uso.sucursales, equipo: uso.usuarios,
+      documentos_subidos: docs.documentos.filter(x => x.archivo).length, documentos_faltan: docs.faltan,
     })
   }
   return resultado
 })
 
 on('PATCH', '/admin/pymes/:id/verificacion', async req => {
-  await auth(req, 'admin', 'asesor')
+  const revisor = await auth(req, 'admin', 'asesor')
   const d = parse(z.object({ decision: z.enum(['aprobar', 'rechazar', 'suspender']) }), req.body)
   const p = await una<Pyme>(req.sql, `select ${PYME} from pymes p where p.id = $1 for update`, [idDe(req.params.id)])
   if (!p) return fail(404, 'Pyme no encontrada')
   if (p.origen === 'publica') return fail(422, FICHA_PUBLICA_SIN_DUENO)
+  // Un alta se aprueba solo con sus documentos obligatorios subidos y sin rechazos pendientes de corregir.
+  const faltan = (await documentosDe(req.sql, p)).faltan
+  if (d.decision === 'aprobar' && p.estado_verificacion === 'pendiente' && faltan.length) return fail(422, documentosFaltantes(faltan))
   const subs = (await suscripcionesDe(req.sql, [p.id])).get(p.id)!
   const pendientes = subs.filter(s => s.estado === 'pendiente')
   const renovacion = p.estado_verificacion === 'aprobada' && pendientes.length > 0 && d.decision !== 'suspender'
@@ -172,6 +178,7 @@ on('PATCH', '/admin/pymes/:id/verificacion', async req => {
       await guardar(s)
     }
     await req.sql("update pagos pg set estado = 'confirmado', pagado_en = $2 from suscripciones s where s.id = pg.suscripcion_id and s.pyme_id = $1 and pg.estado = 'pendiente'", [p.id, now()])
+    if (p.estado_verificacion === 'pendiente') await aprobarDocumentos(req.sql, p, revisor)
     p.estado_verificacion = 'aprobada'
   } else {
     for (const s of renovacion ? pendientes : subs) { s.estado = 'cancelada'; await guardar(s) }

@@ -8,6 +8,7 @@ import { auth, avisarAsesores, correoDe, enviarCorreo, orcobDisponible } from '.
 import { comunasDe, dayOffset, fail, fecha, hace, idDe, now, on, parse, uid, una } from './core'
 import type { Sql } from './db'
 import { CONSULTAS_NO_DISPONIBLES } from '../../src/shared/fichas'
+import { documentosDe } from './documentos'
 import { avisoSolicitud, correoSolicitudPlan, ORCOB_NO_DISPONIBLE, SOLO_ORCOB_CONFIRMA } from '../../src/shared/pagos'
 import {
   cargarVitrina, EN_VITRINA, estadoPlanDe, exigirCupo, ITEM, itemDe, itemsPublicosDe, miPyme, ofertaVigente, permisosEnPyme, planDe, PYME, pymeResumen, pymeResumenDe,
@@ -43,6 +44,7 @@ on('GET', '/pymes/mias', async req => {
     const sucursal = acceso.miembro?.sucursal_id ? await una<{ id: string; nombre: string }>(req.sql, 'select id, nombre from sucursales where id = $1', [acceso.miembro.sucursal_id]) : null
     resultado.push({
       id: p.id, nombre_comercial: p.nombre_comercial, rubro: p.rubro, estado_verificacion: p.estado_verificacion, comuna_id: p.comuna_id, solicitud_pendiente: !!(await pagoPendiente(req.sql, p.id)),
+      documentos_faltan: (await documentosDe(req.sql, p)).faltan,
       rol_interno: acceso.miembro?.rol ?? 'dueno', sucursal: sucursal ? { id: sucursal.id, nombre: sucursal.nombre } : null, permisos: acceso.permisos,
       plan: estado.plan, en_gracia: estado.en_gracia, dias_mora: estado.dias_mora, uso: await usoPyme(req.sql, p.id),
       suscripcion: s && pagado ? { estado: s.estado, fin: s.fin, plan: pagado.nombre, plan_id: pagado.id, precio: pagado.precio_mensual_clp, max_items: estado.plan.limites.items } : null,

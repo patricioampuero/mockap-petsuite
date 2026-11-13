@@ -4,6 +4,7 @@ import type { ApiRole, FichaDatos, Oferta } from '../shared/api'
 import type { ModuloPyme, RolEquipo } from '../shared/permissions'
 import { VERSION_PRIVACIDAD } from '../shared/legal'
 import type { TipoToken } from '../shared/cuentas'
+import type { ArchivoDocumento } from '../shared/documentos'
 
 export type Rubro = 'veterinaria' | 'tienda' | 'peluqueria' | 'otro'
 export type Verificacion = 'pendiente' | 'aprobada' | 'rechazada' | 'suspendida'
@@ -78,6 +79,8 @@ export type Correo = { id: string; para: string; asunto: string; cuerpo: string;
 export type EventoLimite = { clave: string; ocurrido_en: string }
 /** Foto subida por un usuario (datos en base64). En la demo, la foto de la mascota se guarda como data: URL. */
 export type Imagen = { id: string; dueno_id: string; tipo: string; datos: string; bytes: number; creado_en: string }
+/** Documento de validación de un negocio (src/shared/documentos.ts). En la demo, los archivos grandes van sin datos. */
+export type DocumentoPyme = ArchivoDocumento & { pyme_id: string; datos: string | null; subido_por: string | null; revisado_por: string | null }
 // Derechos ARSOPOL de la Ley 21.719: acceso, rectificación, supresión, oposición, portabilidad y bloqueo.
 export type SolicitudPrivacidad = { id: string; usuario_id: string; derecho: 'acceso' | 'rectificacion' | 'supresion' | 'oposicion' | 'portabilidad' | 'bloqueo'; detalle: string; estado: 'recibida' | 'en_proceso' | 'respondida' | 'rechazada'; respuesta: string | null; creado_en: string; vence_en: string; respondido_en: string | null }
 
@@ -116,11 +119,12 @@ export type Db = {
   tokens_cuenta: TokenCuenta[]
   limites: EventoLimite[]
   imagenes: Imagen[]
+  documentos: DocumentoPyme[]
 }
 
-// v7: fotos subidas por los usuarios. Los datos anteriores se descartan.
-export const STORAGE_KEY = 'petsuite-mock-db-v7'
-try { for (const old of ['petsuite-mock-db-v1', 'petsuite-mock-db-v2', 'petsuite-mock-db-v3', 'petsuite-mock-db-v4', 'petsuite-mock-db-v5', 'petsuite-mock-db-v6']) localStorage.removeItem(old) } catch { /* sin almacenamiento */ }
+// v8: documentos de validación de los negocios y pagos con Mercado Pago. Los datos anteriores se descartan.
+export const STORAGE_KEY = 'petsuite-mock-db-v8'
+try { for (const old of ['petsuite-mock-db-v1', 'petsuite-mock-db-v2', 'petsuite-mock-db-v3', 'petsuite-mock-db-v4', 'petsuite-mock-db-v5', 'petsuite-mock-db-v6', 'petsuite-mock-db-v7']) localStorage.removeItem(old) } catch { /* sin almacenamiento */ }
 export const CLAVE_DEMO = 'petsuite123'
 export { VERSION_PRIVACIDAD }
 
@@ -148,7 +152,7 @@ function seed(): Db {
     comunas: ['Osorno', 'Puerto Montt', 'Castro', 'Puerto Octay', 'Purranque', 'Puyehue', 'Río Negro', 'San Juan de la Costa', 'San Pablo', 'Calbuco', 'Cochamó', 'Fresia', 'Frutillar', 'Llanquihue', 'Los Muermos', 'Maullín', 'Puerto Varas', 'Ancud', 'Chonchi', 'Curaco de Vélez', 'Dalcahue', 'Puqueldón', 'Queilén', 'Quellón', 'Quemchi', 'Quinchao', 'Chaitén', 'Futaleufú', 'Hualaihué', 'Palena'].map((nombre, i) => ({ id: i + 1, nombre })),
     usuarios: [], sesiones: {}, mascotas: [], medallas: [], escaneos: [], mensajes: [], accesos: [], pymes: [], sucursales: [], miembros: [], catalogo: [], eventos: [], contactos_pymes: [],
     suscripciones: [], pagos: [], casos_cobranza: [], publicaciones: [], comentarios: [], reacciones: [], guardados: [], reportes: [], ongs: [], animales: [], solicitudes: [], eventos_adopcion: [],
-    banners: [], convenios: [], canjes: [], correos: [], solicitudes_privacidad: [], tokens_cuenta: [], limites: [], imagenes: [],
+    banners: [], convenios: [], canjes: [], correos: [], solicitudes_privacidad: [], tokens_cuenta: [], limites: [], imagenes: [], documentos: [],
   }
   const user = (correo: string, rol: ApiRole, nombre: string, comuna: number) => {
     const creado = t()

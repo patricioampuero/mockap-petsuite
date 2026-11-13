@@ -1068,3 +1068,33 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - Simulación de la carga contra la base real (12 nuevas, 0 repetidas) y luego la carga.
   - `GET https://www.petsuite.space/api/v1/pymes` devuelve las 12 con `sin_reclamar: true`.
   - En Chromium sobre `www.petsuite.space`: Explorar en Puerto Montt a 1366 px muestra 8 tarjetas en gris y 3 pines punteados, y en Osorno a 390 px muestra 4. Sin errores de JavaScript ni desplazamiento horizontal.
+
+## 2026-11-13
+
+### Documentos de validación de los negocios
+
+- Fecha: 2026-11-13.
+- Rama: `patricioampuero/documentos-validacion-locales`, creada desde `origin/main` (después de «Subida de imagenes»).
+- Archivos agregados: `src/shared/documentos.ts`, `src/shared/archivos.ts`, `src/mock/documentos.ts`, `backend/api/documentos.ts`, `backend/api/documentos.test.mjs`, `backend/db/migrations/009_documentos_pyme.sql`, `src/modules/business/business-documents.tsx` y `src/modules/admin/admin-documents.tsx`.
+- Archivos modificados:
+  - API: `backend/api/index.ts`, `backend/api/admin.ts`, `backend/api/pymes.ts`, `backend/http.mjs` y `backend/db/seed.mjs`.
+  - Mock: `src/mock/server.ts` y `src/mock/db.ts` (clave `petsuite-mock-db-v8`).
+  - Interfaz: `src/App.tsx`, `src/modules/business/business.tsx`, `src/modules/admin/admin.tsx`, `src/modules/directory/explore-search.ts` (texto del sello), `src/shared/fotos.ts` y `src/styles/design-pro.css`.
+  - Otros: `backend/api/paridad.test.mjs`, `package.json` y `Agents.md`.
+- Cambio realizado:
+  - **Qué se pide.** Patente comercial y resolución sanitaria a todos los negocios, y la constitución de la sociedad solo si el RUT es de empresa (desde 50.000.000). Un documento por tipo, en PDF, JPG o PNG de hasta 2 MB. Es lo que pidió el profesor en la revisión de la presentación.
+  - **Mi negocio → Documentos.** El negocio sube cada archivo, ve su estado (sin subir, en revisión, aprobado o por corregir) y el motivo si el asesor pidió corregirlo. Una foto del documento se reduce en el teléfono (lado mayor de 2000 px) y pierde los datos de la cámara. El Inicio y el alta avisan qué falta.
+  - **Asesor.** En Pymes y suscripciones, cada alta muestra qué documentos faltan y «Revisar documentos»: descarga cada archivo, lo aprueba o pide corrección con un motivo que le llega al negocio por correo. Cuando un alta completa sus documentos obligatorios, el equipo recibe un aviso.
+  - **Regla.** Un alta (`pendiente`) no se puede aprobar con documentos obligatorios faltantes o rechazados: responde 422 con la lista. Al aprobarla, los documentos en revisión quedan aprobados por quien aprobó. Reactivar un negocio suspendido no los exige.
+  - **Privacidad.** Los archivos se guardan en la base (`documentos_pyme`, con RLS), nunca se publican y solo los descargan el negocio y el equipo. El servidor revisa la firma real del archivo, no solo el tipo declarado. La descarga sale como adjunto con `Cache-Control: private, no-store`.
+  - **Cuerpo HTTP.** El límite general sigue en 1 MB; solo `PUT /pymes/:id/documentos/:tipo` acepta hasta 3 MB (2 MB en base64).
+  - **Sello.** «Validado por PetSuite» dice ahora que se revisaron la patente, la resolución sanitaria y, si corresponde, la constitución.
+  - En la demo, un archivo de más de 300 KB queda registrado sin su contenido, porque todo se guarda en el navegador.
+- Motivo: en la revisión de la presentación el profesor preguntó cómo se valida que un local es real y pidió exigir resolución sanitaria, patente comercial y acta de constitución.
+- Pendiente:
+  - Aplicar las migraciones 008 (fotos, ya fusionada en `main`) y 009 en la base real: `node --env-file=.env.production.local backend/db/migrate.mjs`. Desde esta sesión el permiso fue denegado.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 51 de 51. `documentos.test.mjs` (nuevo) comprueba las reglas compartidas y, sobre el servidor HTTP con PGlite, un PDF de 1,5 MB que entra, uno de más de 2 MB que responde 413, el límite de 1 MB en las demás rutas, la descarga como adjunto privado y el 401/403 para quien no corresponde.
+  - La paridad suma 30 pasos de documentos (subida, firma falsa, tipo inexistente, cuenta ajena, descarga, rechazo con motivo, aprobación bloqueada y luego permitida) con las mismas respuestas en ambos backends.
+  - Revisión en Chromium con la build real (`VITE_API_URL`) contra el API real sobre PGlite migrado: Documentos del negocio y la revisión del asesor a 1366 y 390 px, en claro y oscuro. Sin errores de JavaScript ni desplazamiento horizontal.

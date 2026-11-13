@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertCircle, BadgeCheck, Crown, Eye, MousePointerClick, Package, Pencil, ShoppingBag, Tag, Ticket, X } from 'lucide-react'
+import { AlertCircle, BadgeCheck, Crown, Eye, FileUp, MousePointerClick, Package, Pencil, ShoppingBag, Tag, Ticket, X } from 'lucide-react'
+import { BusinessDocuments } from './business-documents'
 import { api, clp, errorText, fechaCorta, fechaLarga, hoy, modoDemo, ofertaVigente, type Comuna, type ItemCatalogo } from '../../shared/api'
 import { instruccionesTransferencia } from '../../shared/pagos'
 import { BusinessProfile } from './business-profile'
@@ -18,6 +19,8 @@ import { ProfileCover } from '../../shared/profile-cover'
 
 export type MiPyme = {
   id: string; nombre_comercial: string; rubro: string; estado_verificacion: 'pendiente' | 'aprobada' | 'rechazada' | 'suspendida'; comuna_id: number; solicitud_pendiente?: boolean
+  /** Documentos de validación obligatorios que faltan o que el asesor pidió corregir. */
+  documentos_faltan?: string[]
   rol_interno: 'dueno' | 'jefe_local' | 'clinico'; sucursal: { id: string; nombre: string } | null; permisos: ModuloPyme[]
   plan: Plan; en_gracia: boolean; dias_mora: number; uso: Record<keyof Limites, number>
   suscripcion: { estado: string; fin: string; plan: string; plan_id: number; precio: number; max_items: number | null } | null
@@ -27,7 +30,7 @@ type Metricas = { nivel: Plan['beneficios']['metricas']; totales: Totales; anter
 
 const estadoTexto: Record<MiPyme['estado_verificacion'], string> = { pendiente: 'En verificación', aprobada: 'Verificada', rechazada: 'Rechazada', suspendida: 'Suspendida' }
 // Vista del menú → módulo que exige. Las vistas sin módulo (Inicio) las ve todo el equipo.
-const vistaModulo: Record<string, ModuloPyme> = { 'business-profile': 'perfil', branches: 'sucursales', catalog: 'catalogo', contacts: 'contactos', team: 'equipo', ads: 'publicidad', agreements: 'convenios', metrics: 'metricas', subscription: 'suscripcion' }
+const vistaModulo: Record<string, ModuloPyme> = { 'business-profile': 'perfil', documents: 'perfil', branches: 'sucursales', catalog: 'catalogo', contacts: 'contactos', team: 'equipo', ads: 'publicidad', agreements: 'convenios', metrics: 'metricas', subscription: 'suscripcion' }
 
 const rubroTexto: Record<string, string> = { veterinaria: 'Veterinaria', tienda: 'Tienda', peluqueria: 'Peluquería', otro: 'Servicio Pet-Care' }
 
@@ -76,7 +79,7 @@ export function RegisterPyme({ onDone }: { onDone: () => void }) {
     } catch (e) { setError(errorText(e)); setErrorField(''); setBusy(false) }
   }
   if (codigo) return <section className="page role-page"><div className="alert-card"><div className="alert-icon"><ShoppingBag size={22} /></div><div><strong>Negocio enviado a verificación. Tu código de pago Orcob es {codigo}</strong><p>Paga {clp(plan.precio_mensual_clp)} con ese código en los canales de recaudación de Orcob. Cuando Orcob confirme el pago y el asesor verifique tu negocio, se activará el plan {plan.nombre}.</p><button className="primary" onClick={onDone}>Ir a mi panel</button></div></div></section>
-  return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">ALTA DE NEGOCIO</p><h1>Registra tu negocio</h1><p className="muted">Veterinarias, tiendas y peluquerías se publican en el directorio cuando un asesor PetSuite verifica el negocio. Empieza gratis y sube de plan cuando quieras. Sin comisiones por venta.</p></div></div>
+  return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">ALTA DE NEGOCIO</p><h1>Registra tu negocio</h1><p className="muted">Veterinarias, tiendas y peluquerías se publican en el directorio cuando un asesor PetSuite verifica el negocio. Empieza gratis y sube de plan cuando quieras. Sin comisiones por venta.</p><p className="muted">Después del alta te pediremos la patente comercial, la resolución sanitaria y, si el negocio es una empresa, la constitución de la sociedad.</p></div></div>
     <div className="settings-card"><div className="settings-card-heading"><div><p className="eyebrow">PASO 1</p><h2>Elige tu plan</h2><p className="muted">Plan elegido: <strong>{plan.nombre}</strong>{plan.precio_mensual_clp ? ` · ${clp(plan.precio_mensual_clp)} al mes` : ' · sin costo'}.</p></div></div><PlanGrid actual={form.plan_id} onChoose={p => set('plan_id', p.id)} chooseLabel="Quiero" /></div>
     <form className="settings-card" onSubmit={submit} noValidate><div className="settings-card-heading"><div><p className="eyebrow">PASO 2</p><h2>Datos del negocio</h2></div></div><div className="settings-form-grid">
       <label>Nombre comercial<input {...fieldProps('nombre_comercial')} value={form.nombre_comercial} onChange={e => set('nombre_comercial', e.target.value)} /></label>
@@ -101,9 +104,11 @@ function PagoTransferencia({ monto, negocio }: { monto: number; negocio: string 
   return <div className="payment-instructions"><strong>Cómo pagar</strong><ul>{instruccionesTransferencia(monto, negocio).map(l => <li key={l}>{l}</li>)}</ul><p className="muted">Te enviamos esto también por correo. El plan se activa cuando un asesor confirma el pago.</p></div>
 }
 
-function StatusBanner({ pyme }: { pyme: MiPyme }) {
+function StatusBanner({ pyme, onDocuments }: { pyme: MiPyme; onDocuments?: () => void }) {
   if (pyme.estado_verificacion === 'aprobada') return null
-  return <div className="alert-card"><div className="alert-icon"><ShoppingBag size={22} /></div><div><strong>Tu negocio está: {estadoTexto[pyme.estado_verificacion]}</strong><p>{pyme.estado_verificacion === 'pendiente' ? 'Revisaremos tus datos y tu pago. Mientras tanto puedes preparar tu catálogo; se publicará al aprobarse.' : 'Contacta al equipo PetSuite para revisar tu solicitud.'}</p></div></div>
+  const faltan = pyme.estado_verificacion === 'pendiente' ? pyme.documentos_faltan ?? [] : []
+  if (faltan.length) return <div className="alert-card warn"><div className="alert-icon"><FileUp size={22} /></div><div><strong>Sube tus documentos para publicar tu negocio</strong><p>Falta: {faltan.join(', ')}. Un asesor los revisa antes de aprobar el alta; mientras tanto puedes preparar tu catálogo.</p>{onDocuments && pyme.permisos.includes('perfil') && <button type="button" className="primary" onClick={onDocuments}>Subir documentos</button>}</div></div>
+  return <div className="alert-card"><div className="alert-icon"><ShoppingBag size={22} /></div><div><strong>Tu negocio está: {estadoTexto[pyme.estado_verificacion]}</strong><p>{pyme.estado_verificacion === 'pendiente' ? 'Revisaremos tus datos, tus documentos y tu pago. Mientras tanto puedes preparar tu catálogo; se publicará al aprobarse.' : 'Contacta al equipo PetSuite para revisar tu solicitud.'}</p></div></div>
 }
 
 // Aviso de gracia o de baja a Gratis: el negocio sigue visible, pero sus beneficios dependen de renovar.
@@ -113,7 +118,7 @@ function PlanAlert({ pyme }: { pyme: MiPyme }) {
   return null
 }
 
-export function BusinessArea({ active }: { active: string }) {
+export function BusinessArea({ active, setActive }: { active: string; setActive?: (vista: string) => void }) {
   const { pyme, loading, error, reload } = usePyme()
   if (loading) return <section className="page">{error ? <ErrorState message={error} onRetry={() => void reload()} /> : <LoadingState label="Cargando negocio" />}</section>
   if (!pyme) return <RegisterPyme onDone={reload} />
@@ -121,6 +126,7 @@ export function BusinessArea({ active }: { active: string }) {
   const modulo = vistaModulo[active]
   if (modulo && !pyme.permisos.includes(modulo)) return <section className="page role-page"><PermissionState description="Tu rol en la Pyme no tiene acceso a este módulo. Pide permisos al dueño del negocio." /></section>
   if (active === 'business-profile') return pyme.sucursal ? <Branches pyme={pyme} /> : <BusinessProfile pyme={pyme} onSaved={reload} />
+  if (active === 'documents') return <BusinessDocuments pyme={pyme} onChange={reload} />
   if (active === 'branches') return <Branches pyme={pyme} />
   if (active === 'catalog') return <Catalog pyme={pyme} />
   if (active === 'contacts') return <BusinessContacts pyme={pyme} />
@@ -129,10 +135,10 @@ export function BusinessArea({ active }: { active: string }) {
   if (active === 'agreements') return <PymeAgreements pyme={pyme} />
   if (active === 'metrics') return <MetricsView pyme={pyme} />
   if (active === 'subscription') return <Subscription pyme={pyme} onChange={reload} />
-  return <Overview pyme={pyme} />
+  return <Overview pyme={pyme} onDocuments={setActive ? () => setActive('documents') : undefined} />
 }
 
-function Overview({ pyme }: { pyme: MiPyme }) {
+function Overview({ pyme, onDocuments }: { pyme: MiPyme; onDocuments?: () => void }) {
   const [m, setM] = useState<Metricas | null>(null)
   const veMetricas = pyme.permisos.includes('metricas')
   useEffect(() => { if (veMetricas) api<Metricas>(`/pymes/${pyme.id}/metricas`).then(setM).catch(() => setM(null)) }, [pyme.id, veMetricas])
@@ -146,7 +152,7 @@ function Overview({ pyme }: { pyme: MiPyme }) {
       image={rubroFoto[pyme.rubro] || rubroFoto.otro}
       badges={<><PlanBadge plan={pyme.plan} /><span className={verificada ? 'chip chip-ok' : 'chip chip-warn'}>{verificada && <BadgeCheck size={13} />} {estadoTexto[pyme.estado_verificacion]}</span><span className="chip">{rubroTexto[pyme.rubro] || pyme.rubro}</span></>}
       stats={[{ label: 'Ítems en catálogo', value: pyme.uso.items }, { label: pyme.uso.sucursales === 1 ? 'Local' : 'Locales', value: pyme.uso.sucursales }, { label: 'Cuentas de equipo', value: pyme.uso.usuarios }, { label: 'Ofertas vigentes', value: pyme.uso.ofertas }]} />
-    <StatusBanner pyme={pyme} />
+    <StatusBanner pyme={pyme} onDocuments={onDocuments} />
     <PlanAlert pyme={pyme} />
     {veMetricas && <div className="business-stats"><Metric icon={Eye} label="Visitas al perfil" value={String(t?.visita_perfil ?? 0)} trend={t && a ? comparar(t.visita_perfil, a.visita_perfil) : 'Últimos 30 días'} /><Metric icon={Package} tone="info" label="Vistas de productos" value={String(t?.vista_item ?? 0)} trend={t && a ? comparar(t.vista_item, a.vista_item) : 'Últimos 30 días'} /><Metric icon={MousePointerClick} tone="warm" label="Clics de contacto" value={String((t?.clic_contacto ?? 0) + (t?.clic_whatsapp ?? 0))} trend={t && a ? comparar(t.clic_contacto + t.clic_whatsapp, a.clic_contacto + a.clic_whatsapp) : 'Últimos 30 días'} /></div>}
     <div className="business-activity plan-overview"><div className="plan-overview-head"><div><p className="eyebrow">TU PLAN</p><h2><PlanBadge plan={pyme.plan} /> {pyme.plan.precio_mensual_clp ? `${clp(pyme.plan.precio_mensual_clp)} al mes` : 'Sin costo'}</h2><p>{pyme.suscripcion && pyme.dias_mora === 0 ? `Vigente hasta el ${fechaLarga(pyme.suscripcion.fin)}. Tarifa plana, sin comisiones por venta.` : pyme.plan.codigo === 'gratis' ? 'Apareces en el directorio con lo esencial. Sube de plan para sumar sucursales, equipo, ofertas, publicidad y convenios.' : ''}{pyme.solicitud_pendiente ? ' Tienes un pago en revisión.' : ''}</p></div>{dueno && siguiente && <div className="plan-upsell"><Crown size={18} aria-hidden="true" /><span>Con <strong>{siguiente.nombre}</strong> ({clp(siguiente.precio_mensual_clp)}/mes) tendrías {siguiente.limites.items} ítems, {siguiente.limites.sucursales} {siguiente.limites.sucursales === 1 ? 'sucursal' : 'sucursales'} y {siguiente.limites.usuarios} cuentas de equipo.</span></div>}</div>

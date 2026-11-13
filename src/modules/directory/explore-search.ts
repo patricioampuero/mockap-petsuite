@@ -18,7 +18,7 @@ export const CATEGORIAS: Categoria[] = [
 // Sello de confianza: dice exactamente qué revisó PetSuite y qué no garantiza.
 export const SELLO = {
   nombre: 'Validado por PetSuite',
-  detalle: 'Un asesor de PetSuite revisó los datos de registro del negocio (nombre, RUT y rubro) antes de publicarlo. El sello no evalúa la calidad de sus servicios.',
+  detalle: 'Un asesor de PetSuite revisó los datos de registro del negocio (nombre, RUT y rubro), su patente comercial, su resolución sanitaria y, si es una empresa, su constitución, antes de publicarlo. El sello no evalúa la calidad de sus servicios.',
 }
 
 export const normalizar = (texto: string) => texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLocaleLowerCase('es').replace(/[^a-z0-9]+/g, ' ').trim()

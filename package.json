@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "api:start": "node --env-file-if-exists=.env backend/server.mjs",
-    "test": "node --test src/modules/admin/admin-suspension.test.mjs src/modules/business/business.test.mjs src/modules/business/business-rules.test.mjs src/modules/directory/directory-hours.test.mjs src/modules/directory/explore-search.test.mjs backend/server.test.mjs backend/api/servidor.test.mjs backend/api/paridad.test.mjs backend/api/cuentas.test.mjs backend/api/limites.test.mjs backend/api/pagos.test.mjs backend/api/imagenes.test.mjs backend/db/fichas.test.mjs backend/vercel/vercel.test.mjs",
+    "test": "node --test src/modules/admin/admin-suspension.test.mjs src/modules/business/business.test.mjs src/modules/business/business-rules.test.mjs src/modules/directory/directory-hours.test.mjs src/modules/directory/explore-search.test.mjs backend/server.test.mjs backend/api/servidor.test.mjs backend/api/paridad.test.mjs backend/api/cuentas.test.mjs backend/api/limites.test.mjs backend/api/pagos.test.mjs backend/api/imagenes.test.mjs backend/api/documentos.test.mjs backend/db/fichas.test.mjs backend/vercel/vercel.test.mjs",
     "db:migrate": "node --env-file-if-exists=.env backend/db/migrate.mjs",
     "db:seed": "node --env-file-if-exists=.env backend/db/seed.mjs",
     "db:crear-admin": "node --env-file-if-exists=.env backend/db/crear-admin.mjs",

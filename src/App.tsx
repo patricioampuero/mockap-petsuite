@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BadgePercent, Briefcase, Building2, ChartColumn, Check, ChevronDown, ClipboardCheck, Compass, CreditCard, FileUser, Heart, HeartHandshake, House, Landmark, Lock, LogOut, Mail, Megaphone, Menu, MessageCircle, MessagesSquare, Package, PanelLeftClose, PanelLeftOpen, PawPrint, Settings, ShieldCheck, Stethoscope, Store, UserPlus, Users, UsersRound, X } from 'lucide-react'
+import { BadgePercent, Briefcase, Building2, ChartColumn, Check, ChevronDown, ClipboardCheck, Compass, CreditCard, FileCheck, FileUser, Heart, HeartHandshake, House, Landmark, Lock, LogOut, Mail, Megaphone, Menu, MessageCircle, MessagesSquare, Package, PanelLeftClose, PanelLeftOpen, PawPrint, Settings, ShieldCheck, Stethoscope, Store, UserPlus, Users, UsersRound, X } from 'lucide-react'
 import { LogoMark } from './shared/media'
 import { api, getSession, modoDemo, setSession, type ApiRole, type Session } from './shared/api'
 import { Login } from './modules/auth/Login'
@@ -26,7 +26,7 @@ type MenuEntry = MenuItem | MenuGroup
 const esGrupo = (entry: MenuEntry): entry is MenuGroup => !Array.isArray(entry)
 const menuEmpresa = (perfil: string): MenuEntry[] => [
   ['Inicio', 'business-home'],
-  { grupo: 'Mi negocio', icono: Briefcase, items: [[perfil, 'business-profile', 'perfil'], ['Sucursales', 'branches', 'sucursales'], ['Catálogo', 'catalog', 'catalogo'], ['Equipo', 'team', 'equipo']] },
+  { grupo: 'Mi negocio', icono: Briefcase, items: [[perfil, 'business-profile', 'perfil'], ['Documentos', 'documents', 'perfil'], ['Sucursales', 'branches', 'sucursales'], ['Catálogo', 'catalog', 'catalogo'], ['Equipo', 'team', 'equipo']] },
   { grupo: 'Clientes', icono: MessagesSquare, items: [['Consultas', 'contacts', 'contactos'], ['Métricas', 'metrics', 'metricas']] },
   { grupo: 'Promoción', icono: Megaphone, items: [['Publicidad', 'ads', 'publicidad'], ['Convenios', 'agreements', 'convenios']] },
   { grupo: 'Cuenta', icono: CreditCard, items: [['Suscripción', 'subscription', 'suscripcion'], ['Configuración', 'settings']] },
@@ -58,7 +58,7 @@ const firstView: Record<ApiRole, string> = { tutor: 'home', pyme: 'business-home
 
 const navIcons: Record<string, typeof House> = {
   home: House, pets: PawPrint, directory: Store, community: Users, settings: Settings,
-  'business-home': House, 'business-profile': Store, branches: Building2, catalog: Package, contacts: MessageCircle, team: UsersRound, ads: Megaphone, agreements: BadgePercent, metrics: ChartColumn, subscription: CreditCard,
+  'business-home': House, 'business-profile': Store, documents: FileCheck, branches: Building2, catalog: Package, contacts: MessageCircle, team: UsersRound, ads: Megaphone, agreements: BadgePercent, metrics: ChartColumn, subscription: CreditCard,
   'clinical-home': House, patients: Stethoscope, 'admin-home': House, users: Users, moderation: ShieldCheck, subscriptions: CreditCard,
   adoption: Heart, 'ong-home': House, 'ong-profile': FileUser, animals: PawPrint, 'ong-agreements': BadgePercent, 'ong-ads': Megaphone, ongs: ShieldCheck,
   approvals: ClipboardCheck, collections: Landmark, accounts: UserPlus, emails: Mail, 'privacy-admin': Lock,
@@ -202,7 +202,7 @@ function App() {
       <main className="main-content" inert={menuAbierto}>
         <header className="topbar"><button ref={menuBoton} type="button" className="menu-toggle" aria-label="Abrir el menú" aria-controls="menu-lateral" aria-expanded={menuAbierto} onClick={() => setMenuAbierto(true)}><Menu size={22} aria-hidden="true" /></button><div className="mobile-brand brand"><span className="brand-mark"><LogoMark /></span><span>Pet<span>Suite</span></span></div><div className="topbar-context"><strong>{vistasDe(menu).find(([, id]) => id === active)?.[0] ?? 'Inicio'}</strong><span>{roleLabels[user.rol]}</span></div><div className="top-actions"><div className="topbar-user"><strong>{user.nombre}</strong><small>{roleLabels[user.rol]}</small></div><div className="avatar small" aria-label={user.nombre}>{user.nombre.slice(0, 2).toUpperCase()}</div></div></header>
         {active !== 'settings' && user.rol === 'tutor' && <TutorArea active={active} setActive={setActive} name={user.nombre} />}
-        {active !== 'settings' && (user.rol === 'pyme' || user.rol === 'jefe_local') && <BusinessArea active={active} />}
+        {active !== 'settings' && (user.rol === 'pyme' || user.rol === 'jefe_local') && <BusinessArea active={active} setActive={ir} />}
         {active !== 'settings' && user.rol === 'clinico' && <ClinicalArea active={active} />}
         {active !== 'settings' && (user.rol === 'admin' || user.rol === 'asesor') && <AdminArea active={active} rol={user.rol} />}
         {active !== 'settings' && user.rol === 'ong' && <OngArea active={active} />}

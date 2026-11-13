@@ -16,6 +16,8 @@ import { correoAvisoQr } from '../shared/avisos'
 import { CONSULTAS_NO_DISPONIBLES, FICHA_PUBLICA_SIN_DUENO } from '../shared/fichas'
 import { desdeBase64, IMAGEN_AJENA, IMAGEN_INVALIDA, IMAGEN_PESADA, IMAGENES_AGOTADAS, MAX_IMAGENES_POR_USUARIO, revisarImagen } from '../shared/imagenes'
 import { limitesDe, mensajeDemasiados, STATUS_DEMASIADOS, sumaEvento, type Limite } from '../shared/limites'
+import { documentosFaltantes } from '../shared/documentos'
+import { aprobarDocumentos, documentosDe, registerDocumentosRoutes } from './documentos'
 
 z.config(z.locales.es())
 
@@ -582,6 +584,7 @@ on('GET', '/pymes/mias', req => {
     const sucursal = acceso.miembro?.sucursal_id ? db.sucursales.find(x => x.id === acceso.miembro!.sucursal_id) : null
     return [{
       id: p.id, nombre_comercial: p.nombre_comercial, rubro: p.rubro, estado_verificacion: p.estado_verificacion, comuna_id: p.comuna_id, solicitud_pendiente: !!pagoPendiente(p.id),
+      documentos_faltan: documentosDe(p).faltan,
       rol_interno: acceso.miembro?.rol ?? 'dueno', sucursal: sucursal ? { id: sucursal.id, nombre: sucursal.nombre } : null, permisos: acceso.permisos,
       plan: estado.plan, en_gracia: estado.en_gracia, dias_mora: estado.dias_mora, uso: usoPyme(p.id),
       suscripcion: s && pagado ? { estado: s.estado, fin: s.fin, plan: pagado.nombre, plan_id: pagado.id, precio: pagado.precio_mensual_clp, max_items: estado.plan.limites.items } : null,
@@ -1320,16 +1323,20 @@ on('GET', '/admin/pymes', req => {
         solicitud: p.estado_verificacion === 'aprobada' && pend ? 'renovacion' : 'alta', plan: sub ? planPorId(sub.plan_id).nombre : PLAN_GRATIS.nombre,
         plan_vigente: estadoPlan(p.id).plan.nombre, canal: pago?.canal ?? null, referencia: pago?.referencia ?? null, monto_clp: pago?.monto_clp ?? 0,
         sucursales: usoPyme(p.id).sucursales, equipo: usoPyme(p.id).usuarios,
+        documentos_subidos: db.documentos.filter(x => x.pyme_id === p.id).length, documentos_faltan: documentosDe(p).faltan,
       }
     })
 })
 
 on('PATCH', '/admin/pymes/:id/verificacion', req => {
-  auth(req, 'admin', 'asesor')
+  const revisor = auth(req, 'admin', 'asesor')
   const d = parse(z.object({ decision: z.enum(['aprobar', 'rechazar', 'suspender']) }), req.body)
   const p = db.pymes.find(x => x.id === req.params.id)
   if (!p) return fail(404, 'Pyme no encontrada')
   if (p.origen === 'publica') return fail(422, FICHA_PUBLICA_SIN_DUENO)
+  // Un alta se aprueba solo con sus documentos obligatorios subidos y sin rechazos pendientes de corregir.
+  const faltan = documentosDe(p).faltan
+  if (d.decision === 'aprobar' && p.estado_verificacion === 'pendiente' && faltan.length) return fail(422, documentosFaltantes(faltan))
   const subs = db.suscripciones.filter(s => s.pyme_id === p.id), ids = new Set(subs.map(s => s.id))
   const pendientes = subs.filter(s => s.estado === 'pendiente')
   const renovacion = p.estado_verificacion === 'aprobada' && pendientes.length > 0 && d.decision !== 'suspender'
@@ -1343,6 +1350,7 @@ on('PATCH', '/admin/pymes/:id/verificacion', req => {
       s.estado = 'activa'
     }
     for (const pg of pagos) Object.assign(pg, { estado: 'confirmado', pagado_en: now() })
+    if (p.estado_verificacion === 'pendiente') aprobarDocumentos(p, revisor)
     p.estado_verificacion = 'aprobada'
   } else {
     for (const s of renovacion ? pendientes : subs) s.estado = 'cancelada'
@@ -1375,6 +1383,7 @@ on('PATCH', '/admin/ong/:id/verificacion', req => {
 })
 
 registerSuiteRoutes({ on, auth, parse, fail, miPyme, planDe, estadoPlan, exigirCupo, permisosEnPyme, comunaNombre, nombreUsuario, cuponesDe, visible, sinEnlaces, fecha })
+registerDocumentosRoutes({ on, auth, parse, fail, miPyme })
 
 // ---------- Enrutador ----------
 function match(pattern: string, path: string): Record<string, string> | null {
