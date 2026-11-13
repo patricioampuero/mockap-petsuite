@@ -72,6 +72,7 @@ on('GET', '/admin/privacidad', async req => {
 // Supresión: anonimiza la cuenta y borra mascotas y medallas (con sus avisos y accesos); se conservan los pagos por obligación tributaria.
 async function anonimizar(sql: Sql, u: { id: string }) {
   await sql('delete from mascotas where tutor_id = $1', [u.id])
+  await sql('delete from imagenes where dueno_id = $1', [u.id])
   await sql("update publicaciones set estado = 'eliminada' where autor_id = $1", [u.id])
   await sql("update comentarios set estado = 'eliminado' where autor_id = $1", [u.id])
   await sql("update contactos_pymes set remitente_nombre = 'Usuario eliminado', remitente_contacto = null where remitente_id = $1", [u.id])

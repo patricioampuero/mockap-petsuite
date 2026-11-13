@@ -595,6 +595,7 @@ export function registerSuiteRoutes(ctx: Ctx) {
     db.medallas = db.medallas.filter(md => !mascotas.has(md.mascota_id))
     db.accesos = db.accesos.filter(a => !mascotas.has(a.mascota_id))
     db.mascotas = db.mascotas.filter(m => !mascotas.has(m.id))
+    db.imagenes = db.imagenes.filter(i => i.dueno_id !== u.id)
     for (const p of db.publicaciones) if (p.autor_id === u.id) p.estado = 'eliminada'
     for (const c of db.comentarios) if (c.autor_id === u.id) c.estado = 'eliminado'
     for (const c of db.contactos_pymes) if (c.remitente_id === u.id) Object.assign(c, { remitente_nombre: 'Usuario eliminado', remitente_contacto: null })

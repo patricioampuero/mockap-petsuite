@@ -14,6 +14,7 @@ import { avisoSolicitud, correoSolicitudPlan } from '../shared/pagos'
 import { CORREO_SIN_CONFIRMAR, SEGUNDOS_ENTRE_ENVIOS, correoRestablecer, correoVerificacion } from '../shared/cuentas'
 import { correoAvisoQr } from '../shared/avisos'
 import { CONSULTAS_NO_DISPONIBLES, FICHA_PUBLICA_SIN_DUENO } from '../shared/fichas'
+import { desdeBase64, IMAGEN_AJENA, IMAGEN_INVALIDA, IMAGEN_PESADA, IMAGENES_AGOTADAS, MAX_IMAGENES_POR_USUARIO, revisarImagen } from '../shared/imagenes'
 import { limitesDe, mensajeDemasiados, STATUS_DEMASIADOS, sumaEvento, type Limite } from '../shared/limites'
 
 z.config(z.locales.es())
@@ -479,6 +480,47 @@ on('PATCH', '/mascotas/mensajes/:id', req => {
   if (!msg || !m || m.tutor_id !== u.id) return fail(403, 'Sin permiso')
   msg.estado = d.estado
   return { ok: true }
+})
+
+// ---------- Fotos (mismas reglas que el API: src/shared/imagenes.ts) ----------
+// En la demo, la foto de la mascota se guarda como data: URL, porque no hay servidor que la entregue.
+const dataUrl = (i: { tipo: string; datos: string }) => `data:${i.tipo};base64,${i.datos}`
+
+on('POST', '/imagenes', req => {
+  const u = auth(req)
+  const d = parse(z.object({ datos: z.string().max(900_000, IMAGEN_PESADA), tipo: z.string().max(40) }), req.body)
+  const bytes = desdeBase64(d.datos)
+  if (!bytes) return fail(400, IMAGEN_INVALIDA)
+  const motivo = revisarImagen(bytes, d.tipo)
+  if (motivo) return fail(motivo === IMAGEN_PESADA ? 413 : 400, motivo)
+  if (db.imagenes.filter(i => i.dueno_id === u.id).length >= MAX_IMAGENES_POR_USUARIO) return fail(422, IMAGENES_AGOTADAS)
+  const i = { id: uid(), dueno_id: u.id, tipo: d.tipo, datos: d.datos, bytes: bytes.length, creado_en: now() }
+  db.imagenes.push(i)
+  return { id: i.id, url: dataUrl(i) }
+})
+
+on('GET', '/imagenes/:id', req => {
+  const i = db.imagenes.find(x => x.id === req.params.id)
+  if (!i) return fail(404, 'Foto no encontrada')
+  return { __binario: true, tipo: i.tipo, base64: i.datos }
+})
+
+on('PUT', '/mascotas/:id/foto', req => {
+  const [u, m] = propia(req)
+  const d = parse(z.object({ imagen_id: z.string().max(60).nullable() }), req.body)
+  let url: string | null = null
+  if (d.imagen_id) {
+    const i = db.imagenes.find(x => x.id === d.imagen_id && x.dueno_id === u.id)
+    if (!i) return fail(404, IMAGEN_AJENA)
+    url = dataUrl(i)
+  }
+  const anterior = m.foto_url, vieja = db.imagenes.find(x => x.dueno_id === u.id && dataUrl(x) === anterior)
+  m.foto_url = url
+  // La foto anterior se borra si nadie más la usa (un extravío publicado conserva la foto que tenía).
+  if (vieja && anterior !== url && !db.publicaciones.some(p => p.foto_url === anterior) && !db.mascotas.some(x => x.foto_url === anterior) && !db.animales.some(a => a.foto_url === anterior)) {
+    db.imagenes = db.imagenes.filter(x => x.id !== vieja.id)
+  }
+  return { foto_url: url }
 })
 
 // QR público (sin sesión). LISTA BLANCA: nunca medicamentos, historial, datos del tutor ni ids internos.

@@ -1,5 +1,5 @@
 import { useId } from 'react'
-import { iniciales } from './api'
+import { iniciales, recursoApi } from './api'
 
 // Imágenes de demostración de Pexels (licencia libre). Créditos en public/img/CREDITOS.md.
 export const rubroFoto: Record<string, string> = {
@@ -9,8 +9,9 @@ export const rubroFoto: Record<string, string> = {
   otro: '/img/accesorios.jpg',
 }
 
-// Las rutas de /public se resuelven contra la base del sitio (en GitHub Pages es /mockap-petsuite/).
-export const assetUrl = (src: string) => src.startsWith('/') ? `${import.meta.env.BASE_URL}${src.slice(1)}` : src
+// Las rutas de /public se resuelven contra la base del sitio (en GitHub Pages es /mockap-petsuite/); las fotos subidas
+// (/api/v1/imagenes/<id>) contra el API. Las data: URL de la demo se usan tal cual.
+export const assetUrl = (src: string) => src.startsWith('/api/') ? recursoApi(src) : src.startsWith('/') ? `${import.meta.env.BASE_URL}${src.slice(1)}` : src
 
 /**
  * Foto de un negocio en Explorar: su portada o, si no tiene, una foto de muestra de su rubro. Una ficha con información

@@ -9,6 +9,7 @@ import { limpiarClave, registrarEvento, verificarLimites } from './limites'
 // El orden de registro es el del mock: la primera ruta que coincide responde.
 import './cuentas'
 import './ficha'
+import './imagenes'
 import './pymes'
 import './muro'
 import './adopcion'

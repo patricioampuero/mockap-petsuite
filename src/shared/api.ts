@@ -22,6 +22,9 @@ export { ApiError }
 
 const apiUrl = import.meta.env?.VITE_API_URL?.replace(/\/+$/, '')
 
+/** Dirección de un recurso del API (por ejemplo, una foto en /api/v1/imagenes/<id>), aunque el API esté en otro origen. */
+export const recursoApi = (ruta: string) => apiUrl && /^https?:\/\//.test(apiUrl) ? `${new URL(apiUrl).origin}${ruta}` : ruta
+
 async function remote<T>(path: string, method: string, body: unknown, session: Session | null): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`, {
     method,

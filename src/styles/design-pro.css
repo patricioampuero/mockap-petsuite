@@ -796,3 +796,12 @@ body:has(.public-site) { min-width: 0; }
 .payment-instructions { display: grid; gap: 6px; margin: 4px 0 12px; padding: 12px 14px; border: 1px solid var(--color-border-subtle); border-radius: 12px; background: var(--color-bg-subtle); }
 .payment-instructions ul { margin: 0; padding-left: 18px; display: grid; gap: 2px; }
 .payment-instructions p { margin: 0; font-size: 0.85rem; }
+
+/* Foto de la mascota: botón para subirla o cambiarla, debajo de la foto */
+.pet-photo-editor { display: grid; justify-items: center; gap: 6px; flex: none; }
+.pet-photo-change { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 12px; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); background: var(--color-bg-surface-adjusted); color: var(--color-text-primary); font-size: 0.8rem; font-weight: 750; cursor: pointer; }
+.pet-photo-change:hover { background: var(--color-bg-subtle); }
+.pet-photo-change:focus-within { outline: 2px solid var(--color-accent-solid); outline-offset: 2px; }
+.pet-photo-change.is-busy { cursor: progress; opacity: 0.75; }
+.pet-photo-remove { font-size: 0.78rem; }
+.pet-photo-editor .form-error { max-width: 220px; margin: 0; font-size: 0.8rem; text-align: center; }

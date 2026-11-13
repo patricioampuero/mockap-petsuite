@@ -60,6 +60,12 @@ export function crearAtencion({ handle, ApiError, origins }) {
       const path = url.pathname.slice('/api/v1'.length) + url.search
       const result = await handle(req.method || 'GET', path, body, session, clienteDe(req))
       if (result === undefined) { res.writeHead(204, { 'Cache-Control': 'no-store' }); res.end() }
+      else if (result?.__binario) {
+        // Fotos: el archivo tal cual, con caché larga (su dirección no cambia nunca: una foto nueva tiene otro id).
+        const datos = Buffer.from(result.base64, 'base64')
+        res.writeHead(200, { 'Content-Type': result.tipo, 'Content-Length': datos.length, 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' })
+        res.end(datos)
+      }
       else respond(res, 200, result)
     } catch (error) {
       if (error instanceof ApiError) respond(res, error.status, { message: error.message })

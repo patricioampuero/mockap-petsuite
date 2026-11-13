@@ -37,7 +37,8 @@ const LLAVES_ALEATORIAS = new Set(['token', 'codigo_orcob', 'codigo_pago'])
 function normalizar(valor, llave) {
   if (typeof valor === 'string') {
     if (LLAVES_ALEATORIAS.has(llave)) return `<${llave}>`
-    return valor.replace(UUID, '<uuid>').replace(HEX32, '<hex>').replace(ISO, '<ts>').replace(ORCOB, '<orcob>').replace(CLAVE_TEMPORAL, '<clave>')
+    // Fotos subidas: el API las entrega por /api/v1/imagenes/<id>; la demo, como data: URL.
+    return valor.replace(/\/api\/v1\/imagenes\/[0-9a-f-]{36}|data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+/g, '<imagen>').replace(UUID, '<uuid>').replace(HEX32, '<hex>').replace(ISO, '<ts>').replace(ORCOB, '<orcob>').replace(CLAVE_TEMPORAL, '<clave>')
   }
   if (Array.isArray(valor)) return valor.map(x => normalizar(x))
   if (valor && typeof valor === 'object') {
@@ -79,6 +80,10 @@ function cliente(handle) {
 }
 
 // Corre el guion contra ambos backends con los mismos datos y compara paso a paso.
+// Fotos de prueba: un JPEG mínimo sin metadatos y el mismo con un bloque EXIF (datos de cámara o ubicación).
+const JPEG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA='
+const JPEG_EXIF = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x10]), Buffer.from('Exif\0\0'), Buffer.alloc(8), Buffer.from(JPEG, 'base64').subarray(2)]).toString('base64')
+
 // Ficha con información pública: la demo no trae ninguna (solo existen en la versión real), así que la prueba
 // agrega una a los datos de partida de ambos backends.
 const FICHA_PUBLICA = {
@@ -257,6 +262,24 @@ test('Ficha Única: mascotas, accesos clínicos, registros con autoría, medalla
     await call('GET', `/mascotas/${luna}/ficha`, undefined, 'clinico')
     await call('POST', `/mascotas/${luna}/registros`, { version: r6.version, tipo: 'atencion', fecha: '2026-10-05', titulo: 'Control' }, 'clinico')
     await call('GET', '/mascotas/accesibles', undefined, 'clinico')
+
+    // Fotos: el servidor revisa el archivo (tipo real, EXIF), solo el tutor dueño la asocia a su mascota y la foto
+    // se ve en la ficha QR. Al quitarla, la foto subida se borra.
+    await call('POST', '/imagenes', { datos: JPEG, tipo: 'image/jpeg' })
+    await call('POST', '/imagenes', { datos: JPEG, tipo: 'image/png' }, 'tutor')
+    await call('POST', '/imagenes', { datos: JPEG_EXIF, tipo: 'image/jpeg' }, 'tutor')
+    await call('POST', '/imagenes', { datos: 'esto no es una foto', tipo: 'image/jpeg' }, 'tutor')
+    const { data: foto } = await call('POST', '/imagenes', { datos: JPEG, tipo: 'image/jpeg' }, 'tutor')
+    const { data: ajena } = await call('POST', '/imagenes', { datos: JPEG, tipo: 'image/jpeg' }, 'tutor2')
+    await call('GET', `/imagenes/${foto.id}`)
+    await call('GET', '/imagenes/no-existe')
+    await call('PUT', `/mascotas/${luna}/foto`, { imagen_id: foto.id }, 'tutor2')
+    await call('PUT', `/mascotas/${luna}/foto`, { imagen_id: ajena.id }, 'tutor')
+    await call('PUT', `/mascotas/${luna}/foto`, { imagen_id: foto.id }, 'tutor')
+    await call('GET', `/qr/${token}`)
+    await call('PUT', `/mascotas/${luna}/foto`, { imagen_id: null }, 'tutor')
+    await call('GET', `/imagenes/${foto.id}`)
+    await call('PUT', `/mascotas/${luna}/foto`, { imagen_id: ajena.id }, 'tutor2')
 
     // QR público: lista blanca, avisos y reemplazo de medalla.
     await call('GET', `/qr/${token}`)

@@ -67,6 +67,7 @@ async function filas(db) {
     ['canjes', db.canjes],
     ['correos', db.correos],
     ['solicitudes_privacidad', db.solicitudes_privacidad],
+    ['imagenes', db.imagenes.map(i => ({ ...i, datos: Buffer.from(i.datos, 'base64') }))],
   ]
 }
 

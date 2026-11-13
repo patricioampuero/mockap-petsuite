@@ -3,6 +3,7 @@
 import { z } from 'zod'
 import type { FichaDatos } from '../../src/shared/api'
 import { correoAvisoQr } from '../../src/shared/avisos'
+import { IMAGEN_AJENA, idDeUrlImagen, urlImagen } from '../../src/shared/imagenes'
 import { auth, baseApp, enviarCorreo, type Usuario } from './auth'
 import { fail, fecha, idDe, now, on, parse, porTexto, uid, una, type Req } from './core'
 import type { Sql } from './db'
@@ -72,6 +73,27 @@ on('POST', '/mascotas', async req => {
   await req.sql('insert into mascotas (id, tutor_id, nombre, especie, raza, sexo, fecha_nacimiento, creado_en) values ($1, $2, $3, $4, $5, $6, $7, $8)',
     [id, u.id, d.nombre, d.especie, d.raza || null, d.sexo ?? null, d.fecha_nacimiento ?? null, now()])
   return { id }
+})
+
+// Foto de la mascota: una foto subida por el mismo tutor (POST /imagenes), o null para quitarla. La foto anterior se
+// borra si nadie más la usa (un extravío publicado en el muro conserva la foto que tenía al publicarse).
+on('PUT', '/mascotas/:id/foto', async req => {
+  const [u, m] = await propia(req, true)
+  const d = parse(z.object({ imagen_id: z.string().max(60).nullable() }), req.body)
+  let url: string | null = null
+  if (d.imagen_id) {
+    const i = await una<{ id: string }>(req.sql, 'select id from imagenes where id = $1 and dueno_id = $2', [idDe(d.imagen_id), u.id])
+    if (!i) return fail(404, IMAGEN_AJENA)
+    url = urlImagen(i.id)
+  }
+  const anterior = idDeUrlImagen(m.foto_url)
+  await req.sql('update mascotas set foto_url = $2 where id = $1', [m.id, url])
+  if (anterior && m.foto_url !== url) {
+    await req.sql(`delete from imagenes i where i.id = $1 and i.dueno_id = $2
+      and not exists (select 1 from publicaciones p where p.foto_url = $3) and not exists (select 1 from mascotas x where x.foto_url = $3)
+      and not exists (select 1 from animales a where a.foto_url = $3)`, [anterior, u.id, m.foto_url])
+  }
+  return { foto_url: url }
 })
 
 on('PATCH', '/mascotas/:id', async req => {

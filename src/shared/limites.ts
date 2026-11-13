@@ -37,6 +37,8 @@ export function limitesDe(method: string, path: string, body: unknown, cliente: 
   if (path === '/auth/registro' || path === '/auth/reenviar-verificacion' || path === '/auth/recuperar') {
     return { reglas: [{ clave: `correos:${cliente}`, max: 10, segundos: 3600 }], cuenta: 'exito' }
   }
+  // Fotos: 30 por cliente cada hora (además del máximo de fotos por cuenta).
+  if (path === '/imagenes') return { reglas: [{ clave: `imagenes:${cliente}`, max: 30, segundos: 3600 }], cuenta: 'exito' }
   const qr = /^\/qr\/([^/]+)\/mensajes$/.exec(path)
   if (qr) {
     return { reglas: [{ clave: `qr:${qr[1]}:${cliente}`, max: 5, segundos: 3600 }, { clave: `qr:${qr[1]}`, max: 30, segundos: 86_400 }], cuenta: 'exito' }
