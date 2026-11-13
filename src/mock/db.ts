@@ -35,7 +35,7 @@ export type ContactoPyme = { id: string; pyme_id: string; remitente_id: string; 
 export type Item = { id: string; pyme_id: string; tipo: 'producto' | 'servicio'; nombre: string; descripcion: string | null; precio_referencial_clp: number | null; disponible: boolean; categoria: string | null; sin_stock: boolean; oferta: Oferta | null; creado_en: string }
 export type EventoPyme = { id: string; pyme_id: string; item_id: string | null; tipo: 'visita_perfil' | 'vista_item' | 'clic_contacto' | 'clic_whatsapp'; ocurrido_en: string }
 export type Suscripcion = { id: string; pyme_id: string; plan_id: number; inicio: string; fin: string; estado: 'pendiente' | 'activa' | 'vencida' | 'cancelada' }
-export type Pago = { id: string; suscripcion_id: string; monto_clp: number; canal: 'transferencia' | 'orcob'; referencia: string | null; codigo_orcob?: string | null; estado: 'pendiente' | 'confirmado' | 'rechazado'; pagado_en: string }
+export type Pago = { id: string; suscripcion_id: string; monto_clp: number; canal: 'transferencia' | 'orcob' | 'mercadopago'; referencia: string | null; codigo_orcob?: string | null; estado: 'pendiente' | 'confirmado' | 'rechazado'; pagado_en: string }
 // Caso derivado a cobranza externa (Orcob). Se guarda exactamente lo que se envió, para rendir cuentas (Ley 21.719).
 export type CasoCobranza = { id: string; pyme_id: string; id_caso: string; monto_clp: number; dias_mora: number; datos_enviados: Record<string, string | number>; estado: 'en_gestion' | 'pagado' | 'cerrado'; derivado_por: string; derivado_en: string; cerrado_en: string | null }
 export type TipoPublicacion = 'extravio' | 'encuentro' | 'recomendacion' | 'alerta' | 'evento' | 'adopcion'

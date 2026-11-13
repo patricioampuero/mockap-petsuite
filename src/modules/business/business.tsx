@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertCircle, BadgeCheck, Crown, Eye, FileUp, MousePointerClick, Package, Pencil, ShoppingBag, Tag, Ticket, X } from 'lucide-react'
 import { BusinessDocuments } from './business-documents'
 import { api, clp, errorText, fechaCorta, fechaLarga, hoy, modoDemo, ofertaVigente, type Comuna, type ItemCatalogo } from '../../shared/api'
@@ -41,6 +41,34 @@ const comparar = (actual: number, previo: number) => {
   return d === 0 ? 'Igual que los 30 días anteriores' : `${d > 0 ? '+' : ''}${d} frente a los 30 días anteriores`
 }
 
+// ---------- Mercado Pago ----------
+// Con MP_ACCESS_TOKEN en el API, los planes se pagan en Mercado Pago y se activan solos al confirmarse el pago.
+type Medios = { transferencia: boolean; mercadopago: boolean }
+const RETORNO_MP = 'petsuite-retorno-mp'
+const canalTexto: Record<string, string> = { transferencia: 'transferencia', orcob: 'Orcob', mercadopago: 'Mercado Pago' }
+
+/** Si la dirección trae ?pago=mercadopago (Mercado Pago devuelve ahí a la Pyme), lo recuerda y lo quita de la barra. */
+export function marcarRetornoMercadoPago() {
+  try {
+    if (new URLSearchParams(window.location.search).get('pago') !== 'mercadopago') return sessionStorage.getItem(RETORNO_MP) === '1'
+    sessionStorage.setItem(RETORNO_MP, '1')
+    window.history.replaceState(null, '', window.location.pathname + window.location.hash)
+    return true
+  } catch { return false }
+}
+const leerRetornoMp = () => { try { return sessionStorage.getItem(RETORNO_MP) === '1' } catch { return false } }
+const olvidarRetornoMp = () => { try { sessionStorage.removeItem(RETORNO_MP) } catch { /* sin almacenamiento */ } }
+
+function useMedios() {
+  const [medios, setMedios] = useState<Medios>({ transferencia: true, mercadopago: false })
+  useEffect(() => { api<Medios>('/pagos/medios').then(setMedios).catch(() => undefined) }, [])
+  return medios
+}
+
+function PagoMercadoPago({ monto, alta }: { monto: number; alta?: boolean }) {
+  return <div className="payment-instructions"><strong>Pago con Mercado Pago</strong><ul><li>Monto: {clp(monto)} por 30 días.</li><li>Al enviar, te llevamos a Mercado Pago para pagar con tarjeta de crédito, débito o tu saldo.</li><li>{alta ? 'Tu plan comienza cuando un asesor verifica tu negocio.' : 'El plan se activa solo apenas Mercado Pago confirma el pago.'}</li></ul></div>
+}
+
 // Carga la Pyme del usuario. Si no tiene, ofrece el alta (UC-12).
 export function usePyme() {
   const [pymes, setPymes] = useState<MiPyme[] | null>(null)
@@ -57,7 +85,10 @@ export function RegisterPyme({ onDone }: { onDone: () => void }) {
   const [errorField, setErrorField] = useState('')
   const [busy, setBusy] = useState(false)
   const [codigo, setCodigo] = useState('')
+  const medios = useMedios()
   useEffect(() => { api<Comuna[]>('/comunas').then(setComunas).catch(() => undefined) }, [])
+  // Con Mercado Pago disponible, es el medio sugerido (se activa solo, sin esperar a un asesor).
+  useEffect(() => { if (medios.mercadopago) setForm(f => f.canal_pago === 'transferencia' ? { ...f, canal_pago: 'mercadopago' } : f) }, [medios.mercadopago])
   const set = (key: string, value: string | number) => { setForm({ ...form, [key]: value }); if (errorField === key) { setError(''); setErrorField('') } }
   const fieldProps = (key: string) => ({ id: `register-${key}`, 'aria-invalid': errorField === key, 'aria-describedby': errorField === key ? 'register-field-error' : undefined })
   const plan = planPorId(form.plan_id)
@@ -74,7 +105,8 @@ export function RegisterPyme({ onDone }: { onDone: () => void }) {
     const d = parsed.data
     setBusy(true); setError('')
     try {
-      const r = await api<{ codigo_orcob: string | null }>('/pymes', { method: 'POST', body: { nombre_comercial: d.nombre_comercial, rut_empresa: d.rut_empresa, rubro: d.rubro, comuna_id: d.comuna_id, plan_id: d.plan_id, canal_pago: form.canal_pago, ...(d.direccion && { direccion: d.direccion }), ...(d.telefono && { telefono: d.telefono }), ...(d.whatsapp && { whatsapp: d.whatsapp }), ...(d.descripcion && { descripcion: d.descripcion }), ...(d.referencia_pago && { referencia_pago: d.referencia_pago }), ...(d.latitud !== null && { latitud: d.latitud }), ...(d.longitud !== null && { longitud: d.longitud }) } })
+      const r = await api<{ codigo_orcob: string | null; pago_url?: string | null }>('/pymes', { method: 'POST', body: { nombre_comercial: d.nombre_comercial, rut_empresa: d.rut_empresa, rubro: d.rubro, comuna_id: d.comuna_id, plan_id: d.plan_id, canal_pago: plan.precio_mensual_clp > 0 ? form.canal_pago : 'transferencia', ...(d.direccion && { direccion: d.direccion }), ...(d.telefono && { telefono: d.telefono }), ...(d.whatsapp && { whatsapp: d.whatsapp }), ...(d.descripcion && { descripcion: d.descripcion }), ...(d.referencia_pago && { referencia_pago: d.referencia_pago }), ...(d.latitud !== null && { latitud: d.latitud }), ...(d.longitud !== null && { longitud: d.longitud }) } })
+      if (r.pago_url) { window.location.assign(r.pago_url); return }
       if (r.codigo_orcob) { setCodigo(r.codigo_orcob); setBusy(false) } else onDone()
     } catch (e) { setError(errorText(e)); setErrorField(''); setBusy(false) }
   }
@@ -91,12 +123,13 @@ export function RegisterPyme({ onDone }: { onDone: () => void }) {
       <label>WhatsApp<input {...fieldProps('whatsapp')} value={form.whatsapp} onChange={e => set('whatsapp', e.target.value)} placeholder="56912345678" /></label>
       <label>Latitud (mapa, opcional)<input {...fieldProps('latitud')} value={form.latitud} onChange={e => set('latitud', e.target.value)} placeholder="-40.5735" /></label>
       <label>Longitud (mapa, opcional)<input {...fieldProps('longitud')} value={form.longitud} onChange={e => set('longitud', e.target.value)} placeholder="-73.1335" /></label>
-      {plan.precio_mensual_clp > 0 && <>{modoDemo && <label>Forma de pago<select value={form.canal_pago} onChange={e => set('canal_pago', e.target.value)}><option value="transferencia">Transferencia (la verifica un asesor)</option><option value="orcob">Código de recaudación Orcob (demo)</option></select></label>}
+      {plan.precio_mensual_clp > 0 && <>{(modoDemo || medios.mercadopago) && <label>Forma de pago<select value={form.canal_pago} onChange={e => set('canal_pago', e.target.value)}>{medios.mercadopago && <option value="mercadopago">Mercado Pago: tarjeta o saldo (se confirma solo)</option>}<option value="transferencia">Transferencia (la verifica un asesor)</option>{modoDemo && <option value="orcob">Código de recaudación Orcob (demo)</option>}</select></label>}
         {form.canal_pago === 'transferencia' && <label>Referencia de la transferencia (opcional)<input {...fieldProps('referencia_pago')} value={form.referencia_pago} onChange={e => set('referencia_pago', e.target.value)} placeholder="Si ya transferiste: N.º o glosa" /></label>}</>}
     </div>
       {plan.precio_mensual_clp > 0 && form.canal_pago === 'transferencia' && <PagoTransferencia monto={plan.precio_mensual_clp} negocio={form.nombre_comercial.trim() || 'tu negocio'} />}
+      {plan.precio_mensual_clp > 0 && form.canal_pago === 'mercadopago' && <PagoMercadoPago monto={plan.precio_mensual_clp} alta />}
       <label className="composer-label">Descripción<textarea {...fieldProps('descripcion')} rows={3} maxLength={1000} value={form.descripcion} onChange={e => set('descripcion', e.target.value)} /></label>
-      {error && <div className="form-error" id={errorField ? 'register-field-error' : undefined} role={errorField ? undefined : 'alert'}>{error}</div>}<div className="settings-actions"><span className="muted">Plan {plan.nombre}{plan.precio_mensual_clp ? ` · ${clp(plan.precio_mensual_clp)}/mes` : ''}</span><button className="primary" disabled={busy}>{busy ? 'Enviando...' : 'Enviar para verificación'}</button></div></form></section>
+      {error && <div className="form-error" id={errorField ? 'register-field-error' : undefined} role={errorField ? undefined : 'alert'}>{error}</div>}<div className="settings-actions"><span className="muted">Plan {plan.nombre}{plan.precio_mensual_clp ? ` · ${clp(plan.precio_mensual_clp)}/mes` : ''}</span><button className="primary" disabled={busy}>{busy ? 'Enviando...' : plan.precio_mensual_clp > 0 && form.canal_pago === 'mercadopago' ? 'Enviar e ir a pagar' : 'Enviar para verificación'}</button></div></form></section>
 }
 
 /** Cómo pagar un plan por transferencia: datos de la cuenta de PetSuite o, si aún no están, el aviso de que llegarán por correo. */
@@ -254,43 +287,78 @@ function MetricsView({ pyme }: { pyme: MiPyme }) {
 }
 
 // ---------- Suscripción ----------
-type Pago = { id: string; monto_clp: number; estado: string; canal: 'transferencia' | 'orcob'; referencia: string | null; codigo_orcob: string | null }
+type Pago = { id: string; monto_clp: number; estado: string; canal: 'transferencia' | 'orcob' | 'mercadopago'; referencia: string | null; codigo_orcob: string | null }
 type Periodo = { id: string; estado: string; inicio: string; fin: string; plan: string; plan_codigo: Plan['codigo']; precio_mensual_clp: number; pagos: Pago[] }
 const periodoTexto: Record<string, string> = { activa: 'Activa', pendiente: 'En revisión', vencida: 'Vencida', cancelada: 'Cancelada' }
 
 function Subscription({ pyme, onChange }: { pyme: MiPyme; onChange: () => Promise<void> }) {
   const [rows, setRows] = useState<Periodo[] | null>(null)
   const [elegido, setElegido] = useState<Plan | null>(null)
-  const [form, setForm] = useState({ canal: 'transferencia' as 'transferencia' | 'orcob', referencia: '' })
+  const [form, setForm] = useState({ canal: 'transferencia' as 'transferencia' | 'orcob' | 'mercadopago', referencia: '' })
   const [error, setError] = useState('')
   const [done, setDone] = useState('')
+  const [yendo, setYendo] = useState(false)
+  const medios = useMedios()
+  const [retorno] = useState(leerRetornoMp)
+  const revisado = useRef(false)
+  useEffect(() => { if (medios.mercadopago) setForm(f => f.canal === 'transferencia' ? { ...f, canal: 'mercadopago' } : f) }, [medios.mercadopago])
   const load = useCallback(() => api<Periodo[]>(`/pymes/${pyme.id}/suscripcion`).then(setRows).catch(() => setRows([])), [pyme.id])
   useEffect(() => { void load() }, [load])
   const pendiente = rows?.flatMap(r => r.estado === 'pendiente' ? r.pagos.filter(p => p.estado === 'pendiente') : [])[0]
+  // Un pago con Mercado Pago sin completar no bloquea: elegir otro plan o medio lo reemplaza.
+  const bloquea = !!pendiente && pendiente.canal !== 'mercadopago'
   const reload = async () => { await load(); await onChange() }
+  const verificarMp = useCallback(async (pago: Pago, silencioso = false) => {
+    setError('')
+    try {
+      const r = await api<{ estado: string; inicio: string; fin: string }>(`/pymes/${pyme.id}/pagos/${pago.id}/mercadopago/verificar`, { method: 'POST' })
+      if (r.estado === 'confirmado') setDone(pyme.estado_verificacion === 'aprobada' ? `Mercado Pago confirmó tu pago: tu plan rige del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}.` : 'Mercado Pago confirmó tu pago. Tu plan comenzará cuando un asesor verifique tu negocio.')
+      else if (!silencioso) setDone('Mercado Pago todavía no informa el pago. Si pagaste hace poco, espera unos minutos y vuelve a revisar.')
+      await reload()
+    } catch (e) { setError(errorText(e)) }
+  }, [pyme.id, pyme.estado_verificacion]) // reload cambia en cada render; basta con la Pyme
+  // Al volver de Mercado Pago se revisa el pago una vez, por si el aviso de Mercado Pago aún no llega.
+  useEffect(() => {
+    if (!retorno || !rows || revisado.current) return
+    revisado.current = true
+    olvidarRetornoMp()
+    // Los periodos vienen del más reciente al más antiguo: el primer pago con Mercado Pago es el último que se pidió.
+    const ultimoMp = rows.flatMap(r => r.pagos).find(p => p.canal === 'mercadopago')
+    if (ultimoMp?.estado === 'pendiente') void verificarMp(ultimoMp, true)
+    else if (ultimoMp?.estado === 'confirmado') setDone('Mercado Pago confirmó tu pago.')
+  }, [retorno, rows, verificarMp])
+  const reabrirMp = async (pago: Pago) => {
+    setError(''); setYendo(true)
+    try { window.location.assign((await api<{ url: string }>(`/pymes/${pyme.id}/pagos/${pago.id}/mercadopago`, { method: 'POST' })).url) } catch (e) { setError(errorText(e)); setYendo(false) }
+  }
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setError(''); setDone('')
     if (!elegido) return
     try {
-      const r = await api<{ inicio: string; fin: string; codigo_orcob: string | null }>(`/pymes/${pyme.id}/suscripcion`, { method: 'POST', body: { plan_id: elegido.id, canal: form.canal, ...(form.canal === 'transferencia' && form.referencia.trim() && { referencia_pago: form.referencia.trim() }) } })
-      setDone(r.codigo_orcob ? `Paga ${clp(elegido.precio_mensual_clp)} con el código Orcob ${r.codigo_orcob}. El plan ${elegido.nombre} se activa apenas Orcob confirme el pago (del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}).` : `Solicitud enviada. Te enviamos por correo cómo pagar. Cuando un asesor confirme la transferencia, el plan ${elegido.nombre} irá del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}.`)
+      setYendo(form.canal === 'mercadopago')
+      const r = await api<{ inicio: string; fin: string; codigo_orcob: string | null; pago_url?: string | null; aviso?: string }>(`/pymes/${pyme.id}/suscripcion`, { method: 'POST', body: { plan_id: elegido.id, canal: form.canal, ...(form.canal === 'transferencia' && form.referencia.trim() && { referencia_pago: form.referencia.trim() }) } })
+      if (r.pago_url) { window.location.assign(r.pago_url); return }
+      setYendo(false)
+      setDone(r.aviso ?? (r.codigo_orcob ? `Paga ${clp(elegido.precio_mensual_clp)} con el código Orcob ${r.codigo_orcob}. El plan ${elegido.nombre} se activa apenas Orcob confirme el pago (del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}).` : `Solicitud enviada. Te enviamos por correo cómo pagar. Cuando un asesor confirme la transferencia, el plan ${elegido.nombre} irá del ${fechaLarga(r.inicio)} al ${fechaLarga(r.fin)}.`))
       setForm({ ...form, referencia: '' }); setElegido(null); await reload()
-    } catch (e) { setError(errorText(e)) }
+    } catch (e) { setError(errorText(e)); setYendo(false) }
   }
   const simularOrcob = async (pago: Pago) => { setError(''); try { await api(`/pymes/${pyme.id}/pagos/${pago.id}/orcob-confirmado`, { method: 'POST' }); setDone('Orcob confirmó el pago: tu plan quedó activo.'); await reload() } catch (e) { setError(errorText(e)) } }
-  return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">MODELO DE SUSCRIPCIÓN</p><h1>Suscripción</h1><p className="muted">Tarifa plana mensual en cuatro capas, sin comisiones por venta. Paga por transferencia: un asesor la confirma y activa tu plan.{modoDemo && ' En la demo también puedes probar el código de recaudación de Orcob.'}</p></div><PlanBadge plan={pyme.plan} /></div>
+  return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">MODELO DE SUSCRIPCIÓN</p><h1>Suscripción</h1><p className="muted">Tarifa plana mensual en cuatro capas, sin comisiones por venta. {medios.mercadopago ? 'Paga con Mercado Pago y tu plan se activa al instante, o por transferencia, que confirma un asesor.' : 'Paga por transferencia: un asesor la confirma y activa tu plan.'}{modoDemo && ' En la demo también puedes probar el código de recaudación de Orcob.'}</p></div><PlanBadge plan={pyme.plan} /></div>
     <StatusBanner pyme={pyme} />
     <PlanAlert pyme={pyme} />
     {error && <div className="form-error" role="alert">{error}</div>}{done && <p className="save-message" role="status">{done}</p>}
-    {pendiente && <div className="alert-card"><div className="alert-icon"><AlertCircle size={22} /></div><div><strong>Pago en revisión · {clp(pendiente.monto_clp)} por {pendiente.canal === 'orcob' ? 'Orcob' : 'transferencia'}</strong><p>{pendiente.canal === 'orcob' ? `Código de pago Orcob: ${pendiente.codigo_orcob}. En producción, Orcob avisa el pago a PetSuite y el plan se activa automáticamente.` : 'Un asesor PetSuite confirmará la transferencia. Podrás enviar otra solicitud cuando la confirme o la rechace.'}</p>{pendiente.canal === 'transferencia' && <PagoTransferencia monto={pendiente.monto_clp} negocio={pyme.nombre_comercial} />}{pendiente.canal === 'orcob' && modoDemo && <button className="secondary" onClick={() => simularOrcob(pendiente)}>Simular aviso de pago de Orcob (demo)</button>}</div></div>}
+    {pendiente?.canal === 'mercadopago' && <div className="alert-card warn"><div className="alert-icon"><AlertCircle size={22} /></div><div><strong>Pago pendiente en Mercado Pago · {clp(pendiente.monto_clp)}</strong><p>Si ya pagaste, revisa el estado. Si cerraste la ventana, vuelve a abrir el pago. También puedes elegir otro plan o pagar por transferencia: esta solicitud sin pagar se reemplaza.</p><div className="settings-actions"><button type="button" className="secondary" onClick={() => verificarMp(pendiente)}>Ya pagué: revisar</button><button type="button" className="primary" disabled={yendo} onClick={() => reabrirMp(pendiente)}>{yendo ? 'Abriendo Mercado Pago…' : 'Pagar con Mercado Pago'}</button></div></div></div>}
+    {pendiente && pendiente.canal !== 'mercadopago' && <div className="alert-card"><div className="alert-icon"><AlertCircle size={22} /></div><div><strong>Pago en revisión · {clp(pendiente.monto_clp)} por {canalTexto[pendiente.canal]}</strong><p>{pendiente.canal === 'orcob' ? `Código de pago Orcob: ${pendiente.codigo_orcob}. En producción, Orcob avisa el pago a PetSuite y el plan se activa automáticamente.` : 'Un asesor PetSuite confirmará la transferencia. Podrás enviar otra solicitud cuando la confirme o la rechace.'}</p>{pendiente.canal === 'transferencia' && <PagoTransferencia monto={pendiente.monto_clp} negocio={pyme.nombre_comercial} />}{pendiente.canal === 'orcob' && modoDemo && <button className="secondary" onClick={() => simularOrcob(pendiente)}>Simular aviso de pago de Orcob (demo)</button>}</div></div>}
     <div className="settings-card"><div className="settings-card-heading"><div><p className="eyebrow">COMPARA LAS CUATRO CAPAS</p><h2>Gratis, Bronce, Plata y Oro</h2><p className="muted">Al renovar o subir de plan, el nuevo periodo empieza cuando termina el que ya pagaste. Si no renuevas, tienes {DIAS_GRACIA} días de gracia y luego pasas a Gratis sin perder datos.</p></div></div>
-      <PlanGrid actual={pyme.plan.id} onChoose={pyme.estado_verificacion === 'aprobada' && !pendiente ? p => { setElegido(p); setDone(''); setError('') } : undefined} chooseLabel="Cambiar a" />
-      {pyme.estado_verificacion === 'aprobada' && !pendiente && pyme.plan.precio_mensual_clp > 0 && <div className="settings-actions"><span className="muted">¿Quieres mantener tu plan?</span><button className="secondary" onClick={() => setElegido(pyme.plan)}>Renovar {pyme.plan.nombre}</button></div>}</div>
+      <PlanGrid actual={pyme.plan.id} onChoose={pyme.estado_verificacion === 'aprobada' && !bloquea ? p => { setElegido(p); setDone(''); setError('') } : undefined} chooseLabel="Cambiar a" />
+      {pyme.estado_verificacion === 'aprobada' && !bloquea && pyme.plan.precio_mensual_clp > 0 && <div className="settings-actions"><span className="muted">¿Quieres mantener tu plan?</span><button className="secondary" onClick={() => setElegido(pyme.plan)}>Renovar {pyme.plan.nombre}</button></div>}</div>
     {elegido && (elegido.precio_mensual_clp === 0 ? <div className="alert-card"><div><strong>El plan Gratis no requiere pago</strong><p>Se aplica automáticamente cuando termina tu periodo pagado y sus días de gracia. Solo deja de renovar.</p><button className="secondary" onClick={() => setElegido(null)}>Entendido</button></div></div>
       : <form className="settings-card" onSubmit={submit} noValidate><div className="settings-card-heading"><div><p className="eyebrow">{elegido.id === pyme.plan.id ? 'RENOVAR' : 'CAMBIAR DE PLAN'}</p><h2>Plan {elegido.nombre} · {clp(elegido.precio_mensual_clp)} al mes</h2></div></div>
-        <div className="settings-form-grid">{modoDemo && <label>Forma de pago<select value={form.canal} onChange={e => setForm({ ...form, canal: e.target.value as 'transferencia' | 'orcob' })}><option value="transferencia">Transferencia bancaria</option><option value="orcob">Código de recaudación Orcob (demo)</option></select></label>}{form.canal === 'transferencia' && <label>Referencia de la transferencia (opcional)<input value={form.referencia} onChange={e => setForm({ ...form, referencia: e.target.value })} placeholder="Si ya transferiste: N.º o glosa" /></label>}</div>
+        <div className="settings-form-grid">{(modoDemo || medios.mercadopago) && <label>Forma de pago<select value={form.canal} onChange={e => setForm({ ...form, canal: e.target.value as 'transferencia' | 'orcob' | 'mercadopago' })}>{medios.mercadopago && <option value="mercadopago">Mercado Pago: tarjeta o saldo (se activa al pagar)</option>}<option value="transferencia">Transferencia bancaria</option>{modoDemo && <option value="orcob">Código de recaudación Orcob (demo)</option>}</select></label>}{form.canal === 'transferencia' && <label>Referencia de la transferencia (opcional)<input value={form.referencia} onChange={e => setForm({ ...form, referencia: e.target.value })} placeholder="Si ya transferiste: N.º o glosa" /></label>}</div>
         {form.canal === 'transferencia' && <PagoTransferencia monto={elegido.precio_mensual_clp} negocio={pyme.nombre_comercial} />}
-        <div className="settings-actions"><button type="button" className="text-button" onClick={() => setElegido(null)}>Cancelar</button><button className="primary">{form.canal === 'orcob' ? 'Generar código de pago' : 'Enviar solicitud'}</button></div></form>)}
+        {form.canal === 'mercadopago' && <PagoMercadoPago monto={elegido.precio_mensual_clp} />}
+        <div className="settings-actions"><button type="button" className="text-button" onClick={() => setElegido(null)}>Cancelar</button><button className="primary" disabled={yendo}>{form.canal === 'orcob' ? 'Generar código de pago' : form.canal === 'mercadopago' ? (yendo ? 'Abriendo Mercado Pago…' : 'Ir a pagar') : 'Enviar solicitud'}</button></div></form>)}
     <div className="section-heading"><h3>Historial de periodos y pagos</h3></div>
-    <div className="catalog-list">{rows?.map(s => <div className="catalog-item" key={s.id}><div><strong><PlanBadge plan={{ codigo: s.plan_codigo, nombre: s.plan }} /> {clp(s.precio_mensual_clp)} al mes</strong><p>{fechaLarga(s.inicio)} al {fechaLarga(s.fin)}</p>{s.pagos.map(p => <small key={p.id}>Pago {clp(p.monto_clp)} · {p.canal === 'orcob' ? `Orcob${p.codigo_orcob ? ` (código ${p.codigo_orcob})` : ''}` : 'transferencia'} · {p.estado}{p.referencia ? ` · ${p.referencia}` : ''}</small>)}</div><span className={`user-status ${s.estado === 'activa' ? 'activo' : 'suspendido'}`}>{periodoTexto[s.estado] || s.estado}</span></div>)}{rows && rows.length === 0 && <div className="empty-results">Aún no has contratado un plan pagado: estás en Gratis.</div>}</div></section>
+    <div className="catalog-list">{rows?.map(s => <div className="catalog-item" key={s.id}><div><strong><PlanBadge plan={{ codigo: s.plan_codigo, nombre: s.plan }} /> {clp(s.precio_mensual_clp)} al mes</strong><p>{fechaLarga(s.inicio)} al {fechaLarga(s.fin)}</p>{s.pagos.map(p => <small key={p.id}>Pago {clp(p.monto_clp)} · {p.canal === 'orcob' ? `Orcob${p.codigo_orcob ? ` (código ${p.codigo_orcob})` : ''}` : canalTexto[p.canal]} · {p.estado}{p.referencia && p.canal !== 'mercadopago' ? ` · ${p.referencia}` : p.referencia?.startsWith('MP-') ? ` · operación ${p.referencia.slice(3)}` : ''}</small>)}</div><span className={`user-status ${s.estado === 'activa' ? 'activo' : 'suspendido'}`}>{periodoTexto[s.estado] || s.estado}</span></div>)}{rows && rows.length === 0 && <div className="empty-results">Aún no has contratado un plan pagado: estás en Gratis.</div>}</div></section>
 }

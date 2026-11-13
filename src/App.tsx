@@ -5,7 +5,7 @@ import { api, getSession, modoDemo, setSession, type ApiRole, type Session } fro
 import { Login } from './modules/auth/Login'
 import { ResetPassword, VerifyEmail } from './modules/auth/AccountLinks'
 import { EmergencyView, TutorArea } from './modules/tutor/tutor'
-import { BusinessArea } from './modules/business/business'
+import { BusinessArea, marcarRetornoMercadoPago } from './modules/business/business'
 import { ClinicalArea } from './modules/clinical/clinical'
 import { AdminArea } from './modules/admin/admin'
 import { AdoptionCatalog, OngArea } from './modules/ong/adoption'
@@ -111,7 +111,8 @@ type Profile = { name: string; email: string; phone: string; avatar: string }
 
 function App() {
   const [user, setUser] = useState<Session | null>(getSession)
-  const [active, setActive] = useState(() => { const s = getSession(); return s ? firstView[s.rol] : 'home' })
+  // Al volver de Mercado Pago (?pago=mercadopago), la Pyme llega a Suscripción, que verifica el pago.
+  const [active, setActive] = useState(() => { const s = getSession(); return s ? (marcarRetornoMercadoPago() && (s.rol === 'pyme' || s.rol === 'jefe_local') ? 'subscription' : firstView[s.rol]) : 'home' })
   const [theme, setTheme] = useState<ThemeName>(() => {
     const stored = localStorage.getItem('petsuite-theme')
     return themeOptions.some(option => option.name === stored) ? stored as ThemeName : 'original'

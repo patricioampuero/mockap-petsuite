@@ -10,7 +10,7 @@ import { DIAS_GRACIA, DIAS_PERIODO, PLANES, PLAN_GRATIS, dentroDelLimite, etique
 import { PERMISOS_ADMIN, PERMISOS_ASESOR, PERMISOS_DUENO, type ModuloPyme } from '../shared/permissions'
 import { crearCobro } from './orcob'
 import { avisarAsesores, baseApp, emitirToken, enviarCorreo, registerSuiteRoutes, segundosDesdeEnvio, usarToken } from './suite'
-import { avisoSolicitud, correoSolicitudPlan } from '../shared/pagos'
+import { avisoSolicitud, correoSolicitudPlan, MERCADO_PAGO_NO_DISPONIBLE, PAGO_LO_CONFIRMA_MP } from '../shared/pagos'
 import { CORREO_SIN_CONFIRMAR, SEGUNDOS_ENTRE_ENVIOS, correoRestablecer, correoVerificacion } from '../shared/cuentas'
 import { correoAvisoQr } from '../shared/avisos'
 import { CONSULTAS_NO_DISPONIBLES, FICHA_PUBLICA_SIN_DUENO } from '../shared/fichas'
@@ -606,13 +606,15 @@ on('POST', '/pymes', req => {
     telefono: z.string().max(20).optional(),
     whatsapp: z.string().max(20).optional(),
     plan_id: z.number().int().positive().default(PLAN_GRATIS.id),
-    canal_pago: z.enum(['transferencia', 'orcob']).default('transferencia'),
+    canal_pago: z.enum(['transferencia', 'orcob', 'mercadopago']).default('transferencia'),
     referencia_pago: z.string().max(60).optional(),
   }), req.body)
   if (db.pymes.some(p => p.rut_empresa.toLowerCase() === d.rut_empresa.toLowerCase())) return fail(409, 'Ese RUT de empresa ya está registrado')
   const plan = PLANES.find(p => p.id === d.plan_id)
   if (!plan) return fail(400, 'Plan no disponible')
   if (!db.comunas.some(c => c.id === d.comuna_id)) return fail(400, 'Comuna no válida')
+  // La demo no cobra: Mercado Pago solo existe en la versión real, con MP_ACCESS_TOKEN en el API.
+  if (plan.precio_mensual_clp > 0 && d.canal_pago === 'mercadopago') return fail(422, MERCADO_PAGO_NO_DISPONIBLE)
   const p: Pyme = {
     id: uid(), propietario_id: u.id, nombre_comercial: d.nombre_comercial, rut_empresa: d.rut_empresa, rubro: d.rubro, descripcion: d.descripcion ?? null, comuna_id: d.comuna_id,
     direccion: d.direccion ?? null, latitud: d.latitud != null ? String(d.latitud) : null, longitud: d.longitud != null ? String(d.longitud) : null,
@@ -629,11 +631,11 @@ on('POST', '/pymes', req => {
     const c = correoSolicitudPlan(p.nombre_comercial, plan.nombre, plan.precio_mensual_clp, !!cobro.referencia)
     enviarCorreo(u.correo, c.asunto, c.cuerpo, 'cobranza')
   }
-  return { id: p.id, estado_verificacion: p.estado_verificacion, codigo_orcob: cobro?.codigo_orcob ?? null }
+  return { id: p.id, estado_verificacion: p.estado_verificacion, codigo_orcob: cobro?.codigo_orcob ?? null, pago_url: null }
 })
 
 // Crea el periodo pendiente y su pago. Por Orcob se emite un código de recaudación; por transferencia se registra la referencia.
-function registrarPago(p: Pyme, plan: Plan, inicio: string, canal: 'transferencia' | 'orcob', referencia: string | null) {
+function registrarPago(p: Pyme, plan: Plan, inicio: string, canal: 'transferencia' | 'orcob' | 'mercadopago', referencia: string | null) {
   const fin = new Date(`${inicio}T12:00:00Z`); fin.setUTCDate(fin.getUTCDate() + DIAS_PERIODO)
   const s = { id: uid(), pyme_id: p.id, plan_id: plan.id, inicio, fin: fin.toISOString().slice(0, 10), estado: 'pendiente' as const }
   db.suscripciones.push(s)
@@ -846,10 +848,11 @@ on('POST', '/pymes/:id/suscripcion', req => {
   const p = miPyme(req, 'suscripcion')
   const d = parse(z.object({
     plan_id: z.number().int().positive(),
-    canal: z.enum(['transferencia', 'orcob']).default('transferencia'),
+    canal: z.enum(['transferencia', 'orcob', 'mercadopago']).default('transferencia'),
     // Opcional: la Pyme puede pedir el plan y transferir después de recibir los datos; el asesor confirma el pago.
     referencia_pago: z.string().trim().max(60).optional(),
   }), req.body)
+  if (d.canal === 'mercadopago') return fail(422, MERCADO_PAGO_NO_DISPONIBLE)
   if (p.estado_verificacion !== 'aprobada') return fail(422, 'Tu negocio debe estar verificado para renovar o cambiar de plan')
   if (pagoPendiente(p.id)) return fail(409, 'Ya tienes una solicitud de pago en revisión')
   const plan = PLANES.find(x => x.id === d.plan_id)
@@ -857,15 +860,21 @@ on('POST', '/pymes/:id/suscripcion', req => {
   if (plan.precio_mensual_clp === 0) return fail(422, 'El plan Gratis no requiere pago: rige automáticamente cuando termina tu periodo pagado')
   const actual = db.suscripciones.filter(s => s.pyme_id === p.id && s.estado === 'activa').sort((a, b) => b.fin.localeCompare(a.fin))[0]
   const inicio = actual && actual.fin > dayOffset(0) ? actual.fin : dayOffset(0)
-  const r = registrarPago(p, plan, inicio, d.canal, d.referencia_pago || null)
+  const r = registrarPago(p, plan, inicio, d.canal, d.canal === 'transferencia' ? d.referencia_pago || null : null)
   const aviso = avisoSolicitud('plan', p.nombre_comercial, p.rut_empresa, '', plan.nombre, plan.precio_mensual_clp, d.canal, d.canal === 'transferencia' ? r.referencia : null)
   avisarAsesores(aviso.asunto, aviso.cuerpo)
   if (d.canal === 'transferencia') {
     const c = correoSolicitudPlan(p.nombre_comercial, plan.nombre, plan.precio_mensual_clp, !!r.referencia)
     enviarCorreo(db.usuarios.find(x => x.id === p.propietario_id)?.correo ?? '', c.asunto, c.cuerpo, 'cobranza')
   }
-  return { id: r.suscripcion.id, inicio: r.suscripcion.inicio, fin: r.suscripcion.fin, pago_id: r.id, codigo_orcob: r.codigo_orcob }
+  return { id: r.suscripcion.id, inicio: r.suscripcion.inicio, fin: r.suscripcion.fin, pago_id: r.id, codigo_orcob: r.codigo_orcob, pago_url: null }
 })
+
+// Mercado Pago: en la demo no está disponible (mismas respuestas que el API sin MP_ACCESS_TOKEN).
+on('GET', '/pagos/medios', () => ({ transferencia: true, mercadopago: false }))
+on('POST', '/pagos/mercadopago/webhook', () => ({ ok: true }))
+on('POST', '/pymes/:id/pagos/:pagoId/mercadopago/verificar', req => { miPyme(req, 'suscripcion'); return fail(422, MERCADO_PAGO_NO_DISPONIBLE) })
+on('POST', '/pymes/:id/pagos/:pagoId/mercadopago', req => { miPyme(req, 'suscripcion'); return fail(422, MERCADO_PAGO_NO_DISPONIBLE) })
 
 // Demostración del aviso (webhook) de Orcob: confirma el pago y activa el periodo sin intervención del asesor.
 on('POST', '/pymes/:id/pagos/:pagoId/orcob-confirmado', req => {
@@ -1341,15 +1350,19 @@ on('PATCH', '/admin/pymes/:id/verificacion', req => {
   const pendientes = subs.filter(s => s.estado === 'pendiente')
   const renovacion = p.estado_verificacion === 'aprobada' && pendientes.length > 0 && d.decision !== 'suspender'
   const pagos = db.pagos.filter(pg => ids.has(pg.suscripcion_id) && pg.estado === 'pendiente')
+  // Un periodo que espera un pago de Mercado Pago no lo activa el asesor (igual que el API; en la demo no ocurre).
+  const conMp = new Set(pagos.filter(pg => pg.canal === 'mercadopago').map(pg => pg.suscripcion_id))
+  const manuales = pendientes.filter(s => !conMp.has(s.id))
+  if (d.decision === 'aprobar' && renovacion && !manuales.length) return fail(409, PAGO_LO_CONFIRMA_MP)
 
   if (d.decision === 'aprobar') {
     // Renovación: el periodo pedido se respeta. Alta o reactivación: parte hoy.
-    const activar = pendientes.length ? pendientes : subs.slice(-1)
+    const activar = manuales.length ? manuales : pendientes.length ? [] : subs.slice(-1)
     for (const s of activar) {
       if (!renovacion || s.inicio < dayOffset(0)) Object.assign(s, { inicio: dayOffset(0), fin: dayOffset(DIAS_PERIODO) })
       s.estado = 'activa'
     }
-    for (const pg of pagos) Object.assign(pg, { estado: 'confirmado', pagado_en: now() })
+    for (const pg of pagos) if (pg.canal !== 'mercadopago') Object.assign(pg, { estado: 'confirmado', pagado_en: now() })
     if (p.estado_verificacion === 'pendiente') aprobarDocumentos(p, revisor)
     p.estado_verificacion = 'aprobada'
   } else {

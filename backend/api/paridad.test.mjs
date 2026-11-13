@@ -406,6 +406,14 @@ test('directorio y Pymes: perfil, consultas, catálogo, métricas, suscripción,
     await call('POST', `/pymes/${pelu}/pagos/${cobro.pago_id}/orcob-confirmado`, undefined, 'peluqueria')
     await call('POST', `/pymes/${pelu}/pagos/${cobro.pago_id}/orcob-confirmado`, undefined, 'peluqueria')
     await call('GET', `/pymes/${pelu}/suscripcion`, undefined, 'peluqueria')
+    // Mercado Pago sin MP_ACCESS_TOKEN (y en la demo): no se ofrece y sus rutas responden igual en ambos backends.
+    // El flujo con Mercado Pago se prueba contra un Mercado Pago simulado en mercadopago.test.mjs.
+    await call('GET', '/pagos/medios')
+    await call('POST', `/pymes/${shop}/suscripcion`, { plan_id: 3, canal: 'mercadopago' }, 'tienda')
+    await call('POST', `/pymes/${pelu}/pagos/${cobro.pago_id}/mercadopago`, undefined, 'peluqueria')
+    await call('POST', `/pymes/${pelu}/pagos/${cobro.pago_id}/mercadopago`, undefined, 'tutor')
+    await call('POST', `/pymes/${pelu}/pagos/${cobro.pago_id}/mercadopago/verificar`, undefined, 'peluqueria')
+    await call('POST', '/pagos/mercadopago/webhook?data.id=123&type=payment', { type: 'payment', data: { id: '123' } })
     await call('GET', '/pymes/mias', undefined, 'peluqueria')
     await call('GET', '/pymes/mias', undefined, 'tienda')
 
@@ -416,6 +424,7 @@ test('directorio y Pymes: perfil, consultas, catálogo, métricas, suscripción,
     await call('POST', '/pymes', { ...alta, rut_empresa: '123' }, 'nueva')
     await call('POST', '/pymes', { ...alta, comuna_id: 99 }, 'nueva')
     await call('POST', '/pymes', { ...alta, plan_id: 9 }, 'nueva')
+    await call('POST', '/pymes', { ...alta, plan_id: 3, canal_pago: 'mercadopago' }, 'nueva')
     await call('POST', '/pymes', { ...alta, rut_empresa: '76333444-5' }, 'nueva')
     const { data: gateria } = await call('POST', '/pymes', { ...alta, plan_id: 3, canal_pago: 'orcob' }, 'nueva')
     await call('POST', '/pymes', alta, 'tutor')

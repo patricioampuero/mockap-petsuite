@@ -85,7 +85,7 @@ PetSuite dejó de ser solo una demostración. La demo, con el mock y la clave `p
 - Reenviar la confirmación y recuperar la contraseña responden lo mismo exista o no la cuenta.
 - Los textos, plazos y mensajes de las cuentas están en `src/shared/cuentas.ts`, compartido por el mock, el API y el frontend.
 - Los botones de cuentas de prueba y «Datos de demostración» solo aparecen en la demo (`modoDemo`, sin `VITE_API_URL`).
-- Orcob está simulado: solo funciona en la demo y en el API con `ORCOB_SIMULADO=1` (pruebas). En la versión real los planes se pagan por transferencia, que confirma un asesor; los datos de la cuenta van en `DATOS_TRANSFERENCIA` (`src/shared/pagos.ts`).
+- Orcob está simulado: solo funciona en la demo y en el API con `ORCOB_SIMULADO=1` (pruebas). En la versión real los planes se pagan con Mercado Pago (con `MP_ACCESS_TOKEN` en Vercel; se confirma solo, al volver a consultar el pago a Mercado Pago) o por transferencia, que confirma un asesor; los datos de la cuenta van en `DATOS_TRANSFERENCIA` (`src/shared/pagos.ts`). Mercado Pago no existe en la demo.
 
 ### Verificación antes de terminar
 
@@ -1098,3 +1098,32 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - `npm test`: 51 de 51. `documentos.test.mjs` (nuevo) comprueba las reglas compartidas y, sobre el servidor HTTP con PGlite, un PDF de 1,5 MB que entra, uno de más de 2 MB que responde 413, el límite de 1 MB en las demás rutas, la descarga como adjunto privado y el 401/403 para quien no corresponde.
   - La paridad suma 30 pasos de documentos (subida, firma falsa, tipo inexistente, cuenta ajena, descarga, rechazo con motivo, aprobación bloqueada y luego permitida) con las mismas respuestas en ambos backends.
   - Revisión en Chromium con la build real (`VITE_API_URL`) contra el API real sobre PGlite migrado: Documentos del negocio y la revisión del asesor a 1366 y 390 px, en claro y oscuro. Sin errores de JavaScript ni desplazamiento horizontal.
+### Pago de los planes con Mercado Pago
+
+- Fecha: 2026-11-13.
+- Rama: `patricioampuero/pago-mercado-pago`, creada sobre `patricioampuero/documentos-validacion-locales`. Se fusiona después de ella.
+- Archivos agregados: `backend/api/mercadopago.ts`, `backend/api/mercadopago.test.mjs` y `backend/db/migrations/010_pago_mercadopago.sql`.
+- Archivos modificados:
+  - API: `backend/api/pymes.ts`, `backend/api/admin.ts` y `backend/api/index.ts`.
+  - Compartidos: `src/shared/pagos.ts` y `src/shared/limites.ts`.
+  - Mock: `src/mock/server.ts` y `src/mock/db.ts`.
+  - Interfaz: `src/App.tsx`, `src/modules/business/business.tsx` y `src/modules/admin/admin.tsx`.
+  - Otros: `backend/api/paridad.test.mjs`, `backend/README.md` (sección «Pagos con Mercado Pago»), `package.json` y `Agents.md` (regla de pagos).
+- Cambio realizado:
+  - **Checkout Pro.** Con `MP_ACCESS_TOKEN` en el API, el alta y el cambio de plan ofrecen Mercado Pago como medio sugerido, además de la transferencia. El API crea una preferencia con el monto del plan en CLP, `external_reference` = id del pago en PetSuite, vencimiento a 3 días, regreso a `APP_URL?pago=mercadopago` y aviso a `/api/v1/pagos/mercadopago/webhook` (solo con `APP_URL` https). Con un token `TEST-` abre el checkout de prueba.
+  - **Confirmación.** El webhook (`POST /pagos/mercadopago/webhook`, público, con límite de 300 por cliente y hora) y la verificación al volver (`POST /pymes/:id/pagos/:pagoId/mercadopago/verificar`) consultan el pago a Mercado Pago con el token. Solo activan el plan si está aprobado, por el monto exacto y en CLP: un aviso falso no activa nada. Un aviso repetido no hace nada. La Pyme recibe un correo.
+  - **Reintento y reemplazo.** `POST /pymes/:id/pagos/:pagoId/mercadopago` abre una preferencia nueva si la Pyme cerró la ventana. Pedir otro plan o pagar por transferencia reemplaza un pago sin completar, salvo que ya estuviera pagado: entonces se confirma y la respuesta lo avisa (no es un error, porque un error desharía la confirmación).
+  - **Asesor.** No confirma a mano un pago de Mercado Pago (409): solo puede cancelar la solicitud. Aprobar un alta no activa un periodo que espera el pago de Mercado Pago. Un cambio de plan con Mercado Pago no avisa al equipo, porque no tiene nada que revisar.
+  - **Regreso a la app.** `App.tsx` detecta `?pago=mercadopago`, lo quita de la barra y lleva a la Pyme a Suscripción, que revisa el último pago con Mercado Pago.
+  - **`GET /pagos/medios`** dice si Mercado Pago está disponible. Sin `MP_ACCESS_TOKEN` (y en la demo), la app sigue igual que antes: solo transferencia.
+  - **Migración 010**: `pagos.canal` acepta `mercadopago`.
+- Motivo: en la revisión el profesor dijo que pagar con una solicitud y una transferencia «no es muy profesional» y pidió integrar Mercado Pago con su API de prueba.
+- Pendiente:
+  - Crear la aplicación en Mercado Pago Developers y poner su Access Token de prueba en `MP_ACCESS_TOKEN` (Vercel, solo Production). Los pasos están en `backend/README.md`.
+  - Aplicar la migración 010 en la base real antes de fusionar.
+  - No se valida la firma `x-signature` del webhook, porque el enrutador no recibe las cabeceras. No hace falta para la seguridad: el pago siempre se vuelve a consultar a Mercado Pago.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 52 de 52. `mercadopago.test.mjs` (nuevo) usa un Mercado Pago simulado en `MP_API_URL` y comprueba la preferencia (monto, CLP, referencia, regreso, aviso y vencimiento), que el webhook ignora pagos pendientes, de otro monto o en otra moneda, la activación y su correo, el aviso repetido, el 409 del asesor, el reemplazo, la verificación al volver, el reintento, la confirmación de un pago anterior ya pagado y que sin token no se ofrece.
+  - La paridad suma los pasos de Mercado Pago sin token, con las mismas respuestas en ambos backends.
+  - En Chromium, con la build real contra el API real sobre PGlite y un Mercado Pago simulado que aprueba: elegir Plata y luego Oro, «Ir a pagar», volver a la app y ver la confirmación en Suscripción, a 1366 px en claro y a 390 px en oscuro. Sin errores de JavaScript ni desplazamiento horizontal.

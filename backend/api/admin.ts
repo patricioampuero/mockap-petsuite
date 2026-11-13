@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { DIAS_PERIODO, PLANES, PLAN_GRATIS, planPorId } from '../../src/modules/plans/plans'
 import { FICHA_PUBLICA_SIN_DUENO } from '../../src/shared/fichas'
 import { documentosFaltantes } from '../../src/shared/documentos'
+import { PAGO_LO_CONFIRMA_MP } from '../../src/shared/pagos'
 import { aprobarDocumentos, documentosDe } from './documentos'
 import { userSuspensionSchema } from '../../src/shared/validators'
 import { auth, cerrarSesiones, correoDe, enviarCorreo, levantarVencidas } from './auth'
@@ -166,18 +167,22 @@ on('PATCH', '/admin/pymes/:id/verificacion', async req => {
   if (d.decision === 'aprobar' && p.estado_verificacion === 'pendiente' && faltan.length) return fail(422, documentosFaltantes(faltan))
   const subs = (await suscripcionesDe(req.sql, [p.id])).get(p.id)!
   const pendientes = subs.filter(s => s.estado === 'pendiente')
+  // Un periodo que espera un pago de Mercado Pago no lo activa el asesor: se activa cuando Mercado Pago informa el pago.
+  const conMp = new Set((await req.sql<{ suscripcion_id: string }>("select pg.suscripcion_id from pagos pg join suscripciones s on s.id = pg.suscripcion_id where s.pyme_id = $1 and pg.estado = 'pendiente' and pg.canal = 'mercadopago'", [p.id])).map(x => x.suscripcion_id))
+  const manuales = pendientes.filter(s => !conMp.has(s.id))
   const renovacion = p.estado_verificacion === 'aprobada' && pendientes.length > 0 && d.decision !== 'suspender'
+  if (d.decision === 'aprobar' && renovacion && !manuales.length) return fail(409, PAGO_LO_CONFIRMA_MP)
   const guardar = (s: Suscripcion) => req.sql('update suscripciones set inicio = $2, fin = $3, estado = $4 where id = $1', [s.id, s.inicio, s.fin, s.estado])
 
   if (d.decision === 'aprobar') {
     // Renovación: el periodo pedido se respeta. Alta o reactivación: parte hoy.
-    const activar = pendientes.length ? pendientes : subs.slice(-1)
+    const activar = manuales.length ? manuales : pendientes.length ? [] : subs.slice(-1)
     for (const s of activar) {
       if (!renovacion || s.inicio < dayOffset(0)) Object.assign(s, { inicio: dayOffset(0), fin: dayOffset(DIAS_PERIODO) })
       s.estado = 'activa'
       await guardar(s)
     }
-    await req.sql("update pagos pg set estado = 'confirmado', pagado_en = $2 from suscripciones s where s.id = pg.suscripcion_id and s.pyme_id = $1 and pg.estado = 'pendiente'", [p.id, now()])
+    await req.sql("update pagos pg set estado = 'confirmado', pagado_en = $2 from suscripciones s where s.id = pg.suscripcion_id and s.pyme_id = $1 and pg.estado = 'pendiente' and pg.canal <> 'mercadopago'", [p.id, now()])
     if (p.estado_verificacion === 'pendiente') await aprobarDocumentos(req.sql, p, revisor)
     p.estado_verificacion = 'aprobada'
   } else {
