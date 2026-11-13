@@ -58,7 +58,7 @@ export type Ong = {
   id: string; propietario_id: string; nombre: string; tipo: 'refugio' | 'rescatista_independiente' | 'agrupacion'; descripcion: string | null; comuna_id: number; contacto: string | null; redes_sociales: string | null
   estado_verificacion: 'pendiente' | 'aprobada' | 'rechazada'; perfil_publicado: OngPerfil | null; perfil_borrador: OngPerfil | null; perfil_estado: 'sin_enviar' | 'en_revision' | 'publicado' | 'rechazado'; perfil_motivo: string | null; creado_en: string
 }
-export type Animal = { id: string; ong_id: string; nombre: string; especie: string; raza: string | null; edad_estimada: string | null; estado_salud: string | null; historia: string | null; historial_salud: FichaDatos; foto_url: string | null; estado: 'disponible' | 'en_proceso' | 'adoptado'; mascota_id: string | null; publicado_en: string }
+export type Animal = { id: string; ong_id: string; nombre: string; especie: string; raza: string | null; edad_estimada: string | null; estado_salud: string | null; historia: string | null; historial_salud: FichaDatos; foto_url: string | null; estado: 'disponible' | 'en_proceso' | 'adoptado'; mascota_id: string | null; publicado_en: string; prioritario: boolean }
 export type Solicitud = { id: string; animal_id: string; solicitante_nombre: string | null; solicitante_contacto: string | null; mensaje: string; estado: 'nueva' | 'en_conversacion' | 'concretada' | 'cerrada'; creado_en: string }
 export type EventoAdopcion = { id: string; animal_id: string; ocurrido_en: string }
 // Publicidad sin imágenes: texto, tono de color y un destino interno. Siempre pasa por el asesor.
@@ -237,7 +237,7 @@ function seed(): Db {
   const nueva = ong('ong2@petsuite.cl', 'Rescate Nuevo', 'rescatista_independiente', 2, 'pendiente', null)
   const historial = () => ficha({ vacunas: [{ nombre: 'Óctuple', fecha: '2026-07-02' }], tratamientos: [{ descripcion: 'Desparasitación', inicio: '2026-07-02' }] })
   const animal = (ong_id: string, nombre: string, especie: string, raza: string, edad: string, salud: string | null, historia: string, foto: string | null, h = historial()): Animal =>
-    ({ id: uid(), ong_id, nombre, especie, raza, edad_estimada: edad, estado_salud: salud, historia, historial_salud: h, foto_url: foto, estado: 'disponible', mascota_id: null, publicado_en: t() })
+    ({ id: uid(), ong_id, nombre, especie, raza, edad_estimada: edad, estado_salud: salud, historia, historial_salud: h, foto_url: foto, estado: 'disponible', mascota_id: null, publicado_en: t(), prioritario: false })
   db.animales.push(
     animal(patitas, 'Canela', 'perro', 'Mestiza', '1 a 2 años', 'Sana, esterilizada y vacunada', 'Rescatada de la vía pública en Osorno. Es cariñosa y se lleva bien con otros perros.', '/img/canela.jpg'),
     animal(patitas, 'Tomás', 'gato', 'Europeo', '6 meses', 'Sano y desparasitado', 'Encontrado junto a su camada. Juguetón y muy sociable.', '/img/gato-atigrado.jpg'),

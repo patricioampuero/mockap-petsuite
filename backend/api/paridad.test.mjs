@@ -614,6 +614,18 @@ test('adopción y ONG: catálogo, solicitudes, traspaso de la ficha, registro, p
     await call('GET', '/ong/animales', undefined, 'ong')
     assert.ok(animales.length)
 
+    // Prioritario: uno por ONG (marcar a otro le quita la prioridad al anterior), solo disponibles, y adoptar lo quita.
+    await call('PUT', `/ong/animales/${canela}/prioridad`, { prioritario: true }, 'ong')
+    await call('PUT', `/ong/animales/${tomas}/prioridad`, { prioritario: true }, 'ong')
+    await call('GET', '/adopciones')
+    await call('PUT', `/ong/animales/${nuevo.id}/prioridad`, { prioritario: true }, 'ong')
+    await call('PUT', `/ong/animales/${tomas}/prioridad`, { prioritario: true }, 'ong2')
+    await call('PUT', `/ong/animales/${tomas}/prioridad`, { prioritario: 'si' }, 'ong')
+    await call('PUT', `/ong/animales/${tomas}/prioridad`, { prioritario: true }, 'tutor')
+    await call('PUT', `/ong/animales/${tomas}/prioridad`, { prioritario: false }, 'ong')
+    await call('PUT', `/ong/animales/${canela}/prioridad`, { prioritario: true }, 'ong')
+    await call('GET', '/ong/animales', undefined, 'ong')
+
     // Adopción con traspaso de la ficha al tutor registrado.
     await call('POST', `/ong/animales/${canela}/adopcion`, { solicitud_id: 'otra' }, 'ong')
     await call('POST', `/ong/animales/${canela}/adopcion`, { solicitud_id: solicitudes[0].id }, 'ong')

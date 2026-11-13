@@ -67,6 +67,23 @@ export function puntaje(p: PymeResumen, consulta: string): number {
   return total
 }
 
+/**
+ * Por qué aparece un negocio cuando la búsqueda no está en su nombre ni en su rubro: el servicio, y la sucursal si
+ * es de una, donde está la palabra. Así «cortes» explica que una clínica aparece por su «Peluquería clínica».
+ */
+export function coincidencia(p: PymeResumen, consulta: string): string | null {
+  const t = terminos(consulta)
+  const titulo = normalizar(`${p.nombre_comercial} ${rubroLabel[p.rubro] ?? p.rubro}`)
+  const pendientes = t.filter(grupo => !grupo.some(s => titulo.includes(s)))
+  if (!pendientes.length) return null
+  const fuentes = [
+    ...(p.servicios ?? []).map(texto => ({ texto, donde: '' })),
+    ...(p.sucursales ?? []).flatMap(s => s.servicios.filter(x => !(p.servicios ?? []).includes(x)).map(texto => ({ texto, donde: s.nombre }))),
+  ]
+  const f = fuentes.find(x => pendientes.some(grupo => grupo.some(s => normalizar(x.texto).includes(s))))
+  return f ? (f.donde ? `${f.texto} (${f.donde})` : f.texto) : null
+}
+
 export type Filtros = { q: string; comuna: string; rubro: string; ofertas: boolean }
 
 /**

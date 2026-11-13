@@ -6,6 +6,7 @@ import { auth } from './auth'
 import { comunasDe, fail, hace, idDe, now, on, parse, uid, una, type Req } from './core'
 import type { Sql } from './db'
 import { fichaSchema } from './ficha'
+import { ordenAdopciones, PRIORIDAD_SOLO_DISPONIBLES } from '../../src/shared/prioridad'
 
 export type Ong = {
   id: string; propietario_id: string; nombre: string; tipo: 'refugio' | 'rescatista_independiente' | 'agrupacion'; descripcion: string | null; comuna_id: number; contacto: string | null; redes_sociales: string | null
@@ -14,7 +15,7 @@ export type Ong = {
 }
 export type Animal = {
   id: string; ong_id: string; nombre: string; especie: string; raza: string | null; edad_estimada: string | null; estado_salud: string | null; historia: string | null
-  historial_salud: FichaDatos; foto_url: string | null; estado: 'disponible' | 'en_proceso' | 'adoptado'; mascota_id: string | null; publicado_en: string
+  historial_salud: FichaDatos; foto_url: string | null; estado: 'disponible' | 'en_proceso' | 'adoptado'; mascota_id: string | null; publicado_en: string; prioritario: boolean
 }
 // Condición de «visible» del mock: disponible y de una ONG aprobada.
 export const VISIBLE = "a.estado = 'disponible' and exists (select 1 from ongs o where o.id = a.ong_id and o.estado_verificacion = 'aprobada')"
@@ -30,9 +31,10 @@ on('GET', '/adopciones', async req => {
   const comuna = req.query.get('comuna'), especie = req.query.get('especie')
   const comunas = await comunasDe(req.sql)
   const filas = await req.sql<Animal & { ong: string; ong_comuna: number }>(`select a.*, o.nombre as ong, o.comuna_id as ong_comuna from animales a join ongs o on o.id = a.ong_id
-    where ${VISIBLE} order by a.publicado_en desc`)
+    where ${VISIBLE}`)
   return filas.filter(a => (!comuna || comunas.get(a.ong_comuna) === comuna) && (!especie || a.especie.toLowerCase() === especie.toLowerCase()))
-    .map(a => ({ id: a.id, nombre: a.nombre, especie: a.especie, raza: a.raza, edad_estimada: a.edad_estimada, estado_salud: a.estado_salud, foto_url: a.foto_url, publicado_en: a.publicado_en, ong: a.ong, comuna: comunas.get(a.ong_comuna) ?? '' }))
+    .sort(ordenAdopciones)
+    .map(a => ({ id: a.id, nombre: a.nombre, especie: a.especie, raza: a.raza, edad_estimada: a.edad_estimada, estado_salud: a.estado_salud, foto_url: a.foto_url, publicado_en: a.publicado_en, ong: a.ong, comuna: comunas.get(a.ong_comuna) ?? '', prioritario: a.prioritario }))
 })
 
 on('GET', '/adopciones/:id', async req => {
@@ -114,7 +116,7 @@ on('POST', '/ong/animales', async req => {
   const vacia: FichaDatos = { condiciones: [], medicamentos: [], notaEmergencia: '', vacunas: [], alergias: [], tratamientos: [], atenciones: [], alertasCriticas: [] }
   const a: Animal = {
     id: uid(), ong_id: o.id, nombre: d.nombre, especie: d.especie, raza: d.raza ?? null, edad_estimada: d.edad_estimada ?? null, estado_salud: d.estado_salud ?? null, historia: d.historia ?? null,
-    historial_salud: d.historial_salud ?? vacia, foto_url: null, estado: 'disponible', mascota_id: null, publicado_en: now(),
+    historial_salud: d.historial_salud ?? vacia, foto_url: null, estado: 'disponible', mascota_id: null, publicado_en: now(), prioritario: false,
   }
   await guardarAnimal(req.sql, a)
   return { ...a, publicado: o.estado_verificacion === 'aprobada' }
@@ -132,6 +134,19 @@ on('PUT', '/ong/animales/:id', async req => {
   })
   await guardarAnimal(req.sql, a)
   return a
+})
+
+// Prioritario: a lo más uno por ONG (MAX_PRIORITARIOS_POR_ONG, y un índice único en la base). Marcar a otro le quita
+// la prioridad al anterior.
+on('PUT', '/ong/animales/:id/prioridad', async req => {
+  const o = await miOng(req)
+  const d = parse(z.object({ prioritario: z.boolean() }), req.body)
+  const a = await una<Animal>(req.sql, 'select * from animales where id = $1 and ong_id = $2 for update', [idDe(req.params.id), o.id])
+  if (!a) return fail(404, 'No encontrado')
+  if (d.prioritario && a.estado !== 'disponible') return fail(422, PRIORIDAD_SOLO_DISPONIBLES)
+  if (d.prioritario) await req.sql('update animales set prioritario = false where ong_id = $1 and prioritario', [o.id])
+  await req.sql('update animales set prioritario = $2 where id = $1', [a.id, d.prioritario])
+  return { id: a.id, prioritario: d.prioritario }
 })
 
 on('GET', '/ong/animales/:id/solicitudes', async req => {
@@ -176,6 +191,8 @@ on('POST', '/ong/animales/:id/adopcion', async req => {
   a.mascota_id = tutor ? await traspasar(req.sql, a, tutor.id) : null
   a.estado = 'adoptado'
   await guardarAnimal(req.sql, a)
+  // Un animal adoptado deja de ser prioritario: la ONG puede destacar a otro.
+  await req.sql('update animales set prioritario = false where id = $1', [a.id])
   if (sol) await req.sql("update solicitudes_adopcion set estado = 'concretada' where id = $1", [sol.id])
   await req.sql("update solicitudes_adopcion set estado = 'cerrada' where animal_id = $1 and estado in ('nueva', 'en_conversacion')", [a.id])
   return { ok: true, vinculada: !!tutor, mascota_id: a.mascota_id, invitar: !tutor }

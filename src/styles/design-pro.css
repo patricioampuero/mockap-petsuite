@@ -841,3 +841,9 @@ body:has(.public-site) { min-width: 0; }
 .campaign-impact p { margin: 2px 0; }
 .campaign-impact small { color: var(--color-text-muted); }
 .kpi-heading { margin-top: 8px; }
+
+/* Teléfono visible en el perfil público del negocio y etiqueta del animal prioritario */
+.local-phone { color: var(--color-accent-strong); font-weight: 750; text-decoration: none; }
+.local-phone:hover { text-decoration: underline; }
+.priority-chip { display: inline-flex; align-items: center; gap: 4px; width: fit-content; }
+.explore-match { margin: 0; font-size: 0.82rem; color: var(--color-accent-strong); }

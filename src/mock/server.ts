@@ -18,6 +18,7 @@ import { desdeBase64, IMAGEN_AJENA, IMAGEN_INVALIDA, IMAGEN_PESADA, IMAGENES_AGO
 import { limitesDe, mensajeDemasiados, STATUS_DEMASIADOS, sumaEvento, type Limite } from '../shared/limites'
 import { documentosFaltantes } from '../shared/documentos'
 import { DIAS_EVENTOS_CAMPANAS, kpisNegocio, kpisPlataforma } from '../shared/kpis'
+import { ordenAdopciones, PRIORIDAD_SOLO_DISPONIBLES } from '../shared/prioridad'
 import { aprobarDocumentos, documentosDe, registerDocumentosRoutes } from './documentos'
 
 z.config(z.locales.es())
@@ -1075,9 +1076,9 @@ const visible = (a: Animal) => a.estado === 'disponible' && ongDe(a)?.estado_ver
 on('GET', '/adopciones', req => {
   const comuna = req.query.get('comuna'), especie = req.query.get('especie')
   return db.animales.filter(a => visible(a) && (!comuna || comunaNombre(ongDe(a)!.comuna_id) === comuna) && (!especie || a.especie.toLowerCase() === especie.toLowerCase()))
-    .sort((a, b) => b.publicado_en.localeCompare(a.publicado_en)).map(a => {
+    .sort(ordenAdopciones).map(a => {
       const o = ongDe(a)!
-      return { id: a.id, nombre: a.nombre, especie: a.especie, raza: a.raza, edad_estimada: a.edad_estimada, estado_salud: a.estado_salud, foto_url: a.foto_url, publicado_en: a.publicado_en, ong: o.nombre, comuna: comunaNombre(o.comuna_id) }
+      return { id: a.id, nombre: a.nombre, especie: a.especie, raza: a.raza, edad_estimada: a.edad_estimada, estado_salud: a.estado_salud, foto_url: a.foto_url, publicado_en: a.publicado_en, ong: o.nombre, comuna: comunaNombre(o.comuna_id), prioritario: a.prioritario }
     })
 })
 
@@ -1161,7 +1162,7 @@ on('POST', '/ong/animales', req => {
   const d = parse(animalSchema, req.body)
   const a: Animal = {
     id: uid(), ong_id: o.id, nombre: d.nombre, especie: d.especie, raza: d.raza ?? null, edad_estimada: d.edad_estimada ?? null, estado_salud: d.estado_salud ?? null, historia: d.historia ?? null,
-    historial_salud: d.historial_salud ?? ficha(), foto_url: null, estado: 'disponible', mascota_id: null, publicado_en: now(),
+    historial_salud: d.historial_salud ?? ficha(), foto_url: null, estado: 'disponible', mascota_id: null, publicado_en: now(), prioritario: false,
   }
   db.animales.push(a)
   return { ...a, publicado: o.estado_verificacion === 'aprobada' }
@@ -1178,6 +1179,18 @@ on('PUT', '/ong/animales/:id', req => {
     historia: d.historia ?? a.historia, historial_salud: d.historial_salud ?? a.historial_salud, estado: a.estado === 'adoptado' ? a.estado : d.estado ?? a.estado,
   })
   return a
+})
+
+// Prioritario: a lo más uno por ONG (MAX_PRIORITARIOS_POR_ONG). Marcar a otro le quita la prioridad al anterior.
+on('PUT', '/ong/animales/:id/prioridad', req => {
+  const o = miOng(req)
+  const d = parse(z.object({ prioritario: z.boolean() }), req.body)
+  const a = db.animales.find(x => x.id === req.params.id && x.ong_id === o.id)
+  if (!a) return fail(404, 'No encontrado')
+  if (d.prioritario && a.estado !== 'disponible') return fail(422, PRIORIDAD_SOLO_DISPONIBLES)
+  if (d.prioritario) for (const x of db.animales) if (x.ong_id === o.id) x.prioritario = false
+  a.prioritario = d.prioritario
+  return { id: a.id, prioritario: a.prioritario }
 })
 
 on('GET', '/ong/animales/:id/solicitudes', req => {
@@ -1216,6 +1229,8 @@ on('POST', '/ong/animales/:id/adopcion', req => {
   const tutor = tutorPorCorreo(d.correo || sol?.solicitante_contacto)
   a.mascota_id = tutor ? traspasar(a, tutor.id) : null
   a.estado = 'adoptado'
+  // Un animal adoptado deja de ser prioritario: la ONG puede destacar a otro.
+  a.prioritario = false
   if (sol) sol.estado = 'concretada'
   for (const s of db.solicitudes) if (s.animal_id === a.id && (s.estado === 'nueva' || s.estado === 'en_conversacion')) s.estado = 'cerrada'
   return { ok: true, vinculada: !!tutor, mascota_id: a.mascota_id, invitar: !tutor }

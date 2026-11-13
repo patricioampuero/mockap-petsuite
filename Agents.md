@@ -1147,3 +1147,22 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - `npm test`: 57 de 57. `kpis.test.mjs` (nuevo) prueba con horas fijas la hora de Chile en verano e invierno, las franjas, la hora con más visitas, la tasa de contacto, el impacto de una campaña, el orden de los cupones y el ranking con empates.
   - La paridad compara las métricas y el resumen en ambos backends. La franja horaria y la hora con más visitas se comparan solo por forma, porque dependen de la hora a la que corre cada backend.
   - En Chromium, con la build real contra el API real sobre PGlite: Métricas de la veterinaria (Oro) y el Inicio del administrador, a 1366 px en claro y a 390 px en oscuro. Sin errores de JavaScript ni desplazamiento horizontal.
+### Ajustes de la revisión: animal prioritario, teléfono visible, motivo de la búsqueda e indexación
+
+- Fecha: 2026-11-13.
+- Rama: `patricioampuero/ajustes-revision-profesor`, creada sobre `patricioampuero/kpi-negocio`. Se fusiona después de ella.
+- Archivos agregados: `backend/db/migrations/011_animal_prioritario.sql`, `src/shared/prioridad.ts`, `public/robots.txt` y `public/sitemap.xml`.
+- Archivos modificados: `backend/api/adopcion.ts`, `src/mock/server.ts`, `src/mock/db.ts`, `src/modules/ong/adoption.tsx`, `src/modules/directory/public-business.tsx`, `src/modules/directory/explore.tsx`, `src/modules/directory/explore-search.ts`, `src/modules/directory/explore-search.test.mjs`, `src/styles/design-pro.css`, `index.html`, `backend/api/paridad.test.mjs` y `Agents.md`.
+- Cambio realizado:
+  - **Animal prioritario.** Cada ONG puede destacar un solo animal disponible (`PUT /ong/animales/:id/prioridad`). Marcar a otro le quita la prioridad al anterior, y adoptarlo también se la quita. Aparece primero en Adopciones con la etiqueta «Prioritario». La migración 011 agrega la columna y un índice único que impide dos por ONG.
+  - **Teléfono visible.** El perfil público muestra el número junto a la dirección y en el botón «Llamar al …». Antes solo había un botón «Llamar», que en un computador no muestra nada.
+  - **Por qué aparece un negocio.** Cuando la búsqueda coincide con un servicio y no con el nombre o el rubro, la tarjeta de Explorar dice «Coincide con «Peluquería clínica (Sucursal Rahue)»» (`coincidencia` en `explore-search.ts`).
+  - **Indexación en Google.** `index.html` tiene título y descripción con lo que se busca (veterinarias, tiendas y peluquerías de Los Lagos) y etiquetas Open Graph. `robots.txt` deja fuera `/api/` y apunta a `sitemap.xml`.
+- Motivo: en la revisión el profesor preguntó cuántos animales puede priorizar una ONG («si todos los marcan como prioridad…»), buscó el teléfono del local y no lo encontró, preguntó por qué una clínica aparecía al buscar «cortes» y pidió indexar el sitio en Google.
+- Pendiente:
+  - Aplicar la migración 011 en la base real antes de fusionar.
+  - Registrar `https://www.petsuite.space/` en Google Search Console y enviar el sitemap (requiere la cuenta de Google del dueño del dominio). Los perfiles de cada negocio usan `#local/<id>` y Google no los indexa por separado: haría falta pasar a rutas con `/`.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 58 de 58. `explore-search.test.mjs` suma el motivo de la coincidencia. La paridad suma la prioridad: marcar, cambiar, animal en proceso (422), animal de otra ONG (404), dato inválido (400), tutor (403) y quitar.
+  - En Chromium, con la build real contra el API real sobre PGlite: «cortes» en Explorar, el perfil de la clínica con su teléfono y la prioridad en «Mis animales» y en Adopciones, a 1366 px en claro y a 390 px en oscuro. Sin errores de JavaScript ni desplazamiento horizontal.
