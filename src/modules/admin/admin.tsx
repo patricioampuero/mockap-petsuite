@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BriefcaseBusiness, Check, HeartHandshake, QrCode, Search, ShieldAlert, ShieldCheck, Store, TrendingUp, Wallet } from 'lucide-react'
+import { BriefcaseBusiness, Check, Eye, HeartHandshake, MousePointerClick, QrCode, Search, ShieldAlert, ShieldCheck, Store, Ticket, TrendingUp, Wallet } from 'lucide-react'
 import { Metric } from '../../shared/metric'
 import { ProfileCover } from '../../shared/profile-cover'
 import { api, clp, errorText, iniciales } from '../../shared/api'
@@ -15,6 +15,7 @@ type OngPendiente = { id: string; nombre: string; tipo: string; descripcion: str
 type Resumen = {
   ong_pendientes?: number; animales_disponibles?: number; usuarios: number; suspendidos: number; pymes_activas: number; pymes_pendientes: number; reportes_abiertos: number; escaneos: number; ingresos_30d: number
   por_plan: { codigo: PlanCodigo; nombre: string; pymes: number }[]; mrr: number; en_gracia: number; banners_pendientes: number; convenios_pendientes: number; perfiles_pendientes: number; privacidad_pendientes: number
+  kpis?: { visitas_30d: number; contactos_30d: number; tasa_contacto: number | null; canjes_30d: number; negocios_top: { nombre: string; visitas: number }[]; ong_top: { ong: string; canjes: number }[] }
 }
 type Usuario = AccountSummary & { correo: string; rol: string; estado: 'activo' | 'suspendido' | 'eliminado' }
 type Reporte = { id: string; objeto_tipo: string; objeto_id: string; motivo: string; creado_en: string; reportante: string; contenido: string | null; autor: string | null; autor_id: string | null }
@@ -53,6 +54,10 @@ function Overview({ rol }: { rol: 'admin' | 'asesor' }) {
     {!r && !error && <LoadingState label="Cargando resumen" />}
     {error && <ErrorState message={error} onRetry={() => void load()} />}
     {r && <><div className="admin-metrics"><Metric icon={TrendingUp} label="Ingreso mensual recurrente" value={clp(r.mrr)} trend="Suma de planes vigentes" /><Metric icon={Store} tone="info" label="Pymes verificadas" value={String(r.pymes_activas)} trend={`${r.pymes_pendientes} por verificar · ${r.en_gracia} en gracia`} /><Metric icon={Wallet} tone="success" label="Ingresos (30 días)" value={clp(r.ingresos_30d)} trend="Pagos confirmados" />{rol === 'admin' ? <Metric icon={QrCode} tone="warm" label="Escaneos de QR" value={String(r.escaneos)} trend={`${r.usuarios} usuarios · ${r.suspendidos} suspendidos`} /> : <Metric icon={HeartHandshake} tone="warm" label="ONG en verificación" value={String(r.ong_pendientes ?? 0)} trend={`${r.animales_disponibles ?? 0} animales en adopción`} />}</div>
+      {r.kpis && <><div className="section-heading kpi-heading"><div><p className="eyebrow">KPI DE NEGOCIO · ÚLTIMOS 30 DÍAS</p><h2>Cómo se usa Explorar</h2></div></div>
+        <div className="admin-metrics"><Metric icon={Eye} tone="info" label="Visitas a negocios" value={String(r.kpis.visitas_30d)} trend="Perfiles abiertos desde Explorar" /><Metric icon={MousePointerClick} tone="warm" label="Tasa de contacto" value={r.kpis.tasa_contacto === null ? 'Sin datos' : `${r.kpis.tasa_contacto} %`} trend={`${r.kpis.contactos_30d} llamadas o WhatsApp`} /><Metric icon={Ticket} tone="success" label="Cupones canjeados" value={String(r.kpis.canjes_30d)} trend="Ventas con ONG aliadas" /></div>
+        <div className="admin-bottom-grid"><article className="admin-table-card"><div className="chart-heading"><div><p className="eyebrow">TRÁFICO</p><h2>Negocios más visitados</h2></div></div><Ranking filas={r.kpis.negocios_top.map(n => [n.nombre, n.visitas])} unidad={['visita', 'visitas']} vacio="Aún no hay visitas en los últimos 30 días." /></article>
+          <article className="admin-table-card"><div className="chart-heading"><div><p className="eyebrow">ALIADOS ESTRATÉGICOS</p><h2>ONG con más canjes</h2></div></div><Ranking filas={r.kpis.ong_top.map(o => [o.ong, o.canjes])} unidad={['canje', 'canjes']} vacio="Aún no hay canjes de cupones en los últimos 30 días." /></article></div></>}
       <div className="admin-bottom-grid"><article className="admin-table-card"><div className="chart-heading"><div><p className="eyebrow">MODELO DE NEGOCIO</p><h2>Pymes por plan</h2></div></div><div className="channel-list">{r.por_plan.map(p => <div key={p.codigo}><div className="channel-head"><PlanBadge plan={p} /><small>{p.pymes} {p.pymes === 1 ? 'Pyme' : 'Pymes'} · {clp((PLANES.find(x => x.codigo === p.codigo)?.precio_mensual_clp ?? 0) * p.pymes)}/mes</small></div><div className="channel-bar" aria-hidden="true"><span style={{ width: `${(p.pymes / total) * 100}%` }} /></div></div>)}</div></article>
         <article className="admin-table-card"><div className="chart-heading"><div><p className="eyebrow">PENDIENTES</p><h2>Requiere tu atención</h2></div></div>
           {rol === 'admin' && <div className="health-stat warning"><span className="status-dot" /><div><strong>{r.reportes_abiertos} reportes abiertos</strong><small>Meta de resolución: 24 horas</small></div></div>}
@@ -61,6 +66,13 @@ function Overview({ rol }: { rol: 'admin' | 'asesor' }) {
           <div className="health-stat warning"><span className="status-dot" /><div><strong>{r.pymes_pendientes} Pymes en verificación</strong><small>Revisa el negocio y su pago</small></div></div>
           <div className="health-stat warning"><span className="status-dot" /><div><strong>{r.ong_pendientes ?? 0} ONG en verificación</strong><small>{r.animales_disponibles ?? 0} animales disponibles en el catálogo</small></div></div></article></div></>}
   </section>
+}
+
+/** Ranking con barras proporcionales al primero. */
+export function Ranking({ filas, unidad, vacio }: { filas: [string, number][]; unidad: [string, string]; vacio: string }) {
+  const max = Math.max(1, ...filas.map(([, n]) => n))
+  if (!filas.length) return <p className="muted">{vacio}</p>
+  return <div className="channel-list">{filas.map(([nombre, n]) => <div key={nombre}><div className="channel-head"><strong>{nombre}</strong><small>{n} {n === 1 ? unidad[0] : unidad[1]}</small></div><div className="channel-bar" aria-hidden="true"><span style={{ width: `${(n / max) * 100}%` }} /></div></div>)}</div>
 }
 
 function Users() {

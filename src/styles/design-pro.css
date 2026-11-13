@@ -833,3 +833,11 @@ body:has(.public-site) { min-width: 0; }
   .document-row { flex-direction: column; }
   .document-upload { align-self: stretch; justify-content: center; }
 }
+
+/* KPI de negocio: impacto de campañas con ONG y encabezado de la fila de KPI del administrador */
+.campaign-list { display: grid; gap: 12px; }
+.campaign-impact { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--color-border-subtle); }
+.campaign-impact:last-child { padding-bottom: 0; border-bottom: 0; }
+.campaign-impact p { margin: 2px 0; }
+.campaign-impact small { color: var(--color-text-muted); }
+.kpi-heading { margin-top: 8px; }

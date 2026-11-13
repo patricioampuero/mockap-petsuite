@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertCircle, BadgeCheck, Crown, Eye, FileUp, MousePointerClick, Package, Pencil, ShoppingBag, Tag, Ticket, X } from 'lucide-react'
 import { BusinessDocuments } from './business-documents'
+import type { Franja, ImpactoCampana } from '../../shared/kpis'
 import { api, clp, errorText, fechaCorta, fechaLarga, hoy, modoDemo, ofertaVigente, type Comuna, type ItemCatalogo } from '../../shared/api'
 import { instruccionesTransferencia } from '../../shared/pagos'
 import { BusinessProfile } from './business-profile'
@@ -26,7 +27,13 @@ export type MiPyme = {
   suscripcion: { estado: string; fin: string; plan: string; plan_id: number; precio: number; max_items: number | null } | null
 }
 type Totales = Record<'visita_perfil' | 'vista_item' | 'clic_contacto' | 'clic_whatsapp', number>
-type Metricas = { nivel: Plan['beneficios']['metricas']; totales: Totales; anteriores: Totales; ofertas_vigentes: number; por_dia: { dia: string; eventos: number }[]; items_mas_vistos: { nombre: string; vistas: number }[]; canjes_30d: number; por_sucursal: { nombre: string; canjes: number }[] }
+type Metricas = {
+  nivel: Plan['beneficios']['metricas']; totales: Totales; anteriores: Totales; ofertas_vigentes: number; por_dia: { dia: string; eventos: number }[]; items_mas_vistos: { nombre: string; vistas: number }[]; canjes_30d: number; por_sucursal: { nombre: string; canjes: number }[]
+  // KPI de negocio (src/shared/kpis.ts)
+  tasa_contacto?: number | null; por_franja?: Franja[]; hora_peak?: number | null
+  cupones?: { codigo: string; titulo: string; ong: string; activo: boolean; canjes_30d: number }[]
+  campanas?: ({ titulo: string; ong: string; codigo: string; desde: string; canjes: number } & ImpactoCampana)[]
+}
 
 const estadoTexto: Record<MiPyme['estado_verificacion'], string> = { pendiente: 'En verificación', aprobada: 'Verificada', rechazada: 'Rechazada', suspendida: 'Suspendida' }
 // Vista del menú → módulo que exige. Las vistas sin módulo (Inicio) las ve todo el equipo.
@@ -277,7 +284,8 @@ function MetricsView({ pyme }: { pyme: MiPyme }) {
   const canales = [['Llamadas', t.clic_contacto, a.clic_contacto], ['WhatsApp', t.clic_whatsapp, a.clic_whatsapp]] as const
   const mejora = (desde: string) => <div className="role-panel locked-panel"><p className="eyebrow">DISPONIBLE DESDE {desde.toUpperCase()}</p><p className="muted">Mejora tu plan en Suscripción para ver este detalle.</p></div>
   return <section className="page role-page"><div className="page-title"><div><p className="eyebrow">GESTIÓN B2B · MÉTRICAS {m.nivel.toUpperCase()}</p><h1>Panel de métricas</h1><p className="muted">Cómo te encuentra la comunidad. Últimos 30 días comparados con los 30 anteriores.</p></div><PlanBadge plan={pyme.plan} /></div>
-    <div className="metric-grid"><Metric icon={Eye} label="Visitas al perfil" value={String(t.visita_perfil)} trend={comparar(t.visita_perfil, a.visita_perfil)} /><Metric icon={Package} tone="info" label="Vistas de ítems" value={String(t.vista_item)} trend={comparar(t.vista_item, a.vista_item)} /><Metric icon={MousePointerClick} tone="warm" label="Clics de contacto" value={String(contactos)} trend={comparar(contactos, a.clic_contacto + a.clic_whatsapp)} /><Metric icon={Ticket} tone="success" label="Cupones canjeados" value={String(m.canjes_30d)} trend="Ventas atribuidas a ONG aliadas" /></div>
+    <div className="metric-grid"><Metric icon={Eye} label="Visitas al perfil" value={String(t.visita_perfil)} trend={comparar(t.visita_perfil, a.visita_perfil)} /><Metric icon={Package} tone="info" label="Vistas de ítems" value={String(t.vista_item)} trend={comparar(t.vista_item, a.vista_item)} /><Metric icon={MousePointerClick} tone="warm" label="Tasa de contacto" value={m.tasa_contacto == null ? 'Sin datos' : `${m.tasa_contacto} %`} trend={`${contactos} ${contactos === 1 ? 'clic' : 'clics'} para llamar o escribir · ${comparar(contactos, a.clic_contacto + a.clic_whatsapp)}`} /><Metric icon={Ticket} tone="success" label="Cupones canjeados" value={String(m.canjes_30d)} trend="Ventas atribuidas a ONG aliadas" /></div>
+    <KpiNegocio m={m} mejora={mejora} />
     <article className="admin-chart-card"><div className="chart-heading"><div><p className="eyebrow">ACTIVIDAD</p><h2>Eventos por día</h2></div></div>{m.por_dia.length ? <div className="bar-chart" aria-label="Eventos por día">{m.por_dia.map(d => <div className="bar-column" key={d.dia}><span style={{ height: `${Math.max(6, (d.eventos / max) * 100)}%` }} /><small>{new Date(d.dia).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })}</small></div>)}</div> : <p className="muted">Aún no hay actividad registrada.</p>}</article>
     <div className="metrics-split">
       {m.nivel === 'basicas' ? mejora('Plata') : <div className="role-panel"><p className="eyebrow">CONTACTO POR CANAL</p><h2>Cómo te escriben</h2><div className="channel-list">{canales.map(([label, n, prev]) => <div key={label}><div className="channel-head"><strong>{label}</strong><small>{n} · {comparar(n, prev)}</small></div><div className="channel-bar" aria-hidden="true"><span style={{ width: `${contactos ? (n / contactos) * 100 : 0}%` }} /></div></div>)}</div>{!contactos && <p className="muted">Publica tu teléfono y WhatsApp en el perfil para recibir contactos.</p>}</div>}
@@ -286,8 +294,28 @@ function MetricsView({ pyme }: { pyme: MiPyme }) {
     </div></section>
 }
 
+const horaTexto = (h: number) => `${String(h).padStart(2, '0')}:00 a ${String((h + 1) % 24).padStart(2, '0')}:00`
+const variacionTexto = (c: ImpactoCampana) => c.variacion_pct === null ? (c.visitas_despues ? 'Sin visitas antes para comparar' : 'Sin visitas todavía') : `${c.variacion_pct > 0 ? '+' : ''}${c.variacion_pct} % de visitas`
+
+/** KPI de negocio: cuándo te visitan, qué cupón funciona y cuánto movió cada campaña con una ONG. */
+function KpiNegocio({ m, mejora }: { m: Metricas; mejora: (desde: string) => React.ReactNode }) {
+  const franjas = m.por_franja ?? [], maxFranja = Math.max(1, ...franjas.map(f => f.visitas))
+  return <div className="metrics-split">
+    {m.nivel === 'basicas' ? mejora('Plata') : <div className="role-panel"><p className="eyebrow">CUÁNDO TE VISITAN</p><h2>Visitas por franja horaria</h2>
+      <div className="channel-list">{franjas.map(f => <div key={f.franja}><div className="channel-head"><strong>{f.franja}</strong><small>{f.horas} · {f.visitas} {f.visitas === 1 ? 'visita' : 'visitas'}</small></div><div className="channel-bar" aria-hidden="true"><span style={{ width: `${(f.visitas / maxFranja) * 100}%` }} /></div></div>)}</div>
+      <p className="muted">{m.hora_peak == null ? 'Aún no hay visitas en los últimos 30 días.' : `Hora con más visitas: ${horaTexto(m.hora_peak)}. Publica tus ofertas y responde las consultas antes de esa hora.`}</p></div>}
+    <div className="role-panel"><p className="eyebrow">CÓDIGOS DE DESCUENTO</p><h2>Cupones más usados</h2>
+      <div className="role-list">{m.cupones?.length ? m.cupones.map(c => <div key={c.codigo}><span className={c.activo ? 'list-dot' : 'list-dot soft'} /><strong>{c.codigo}</strong><small>{c.canjes_30d} {c.canjes_30d === 1 ? 'canje' : 'canjes'} · {c.ong}</small></div>) : <div><span className="list-dot soft" /><strong>Sin convenios activos</strong><small>Crea uno en Promoción → Convenios</small></div>}</div></div>
+    <div className="role-panel"><p className="eyebrow">CAMPAÑAS CON ONG</p><h2>Impacto en tus visitas</h2>
+      {m.campanas?.length ? <div className="campaign-list">{m.campanas.map(c => <div className="campaign-impact" key={`${c.codigo}-${c.desde}`}><strong>{c.titulo}</strong><small>Con {c.ong} · desde el {fechaLarga(c.desde)}</small>
+        <p><span className={`chip ${c.variacion_pct != null && c.variacion_pct > 0 ? 'chip-ok' : c.variacion_pct != null && c.variacion_pct < 0 ? 'chip-alert' : ''}`}>{variacionTexto(c)}</span></p>
+        <small>{c.visitas_antes} visitas en los {c.dias} días anteriores → {c.visitas_despues} en los {c.dias} días siguientes · {c.canjes} {c.canjes === 1 ? 'canje' : 'canjes'}</small></div>)}</div>
+        : <p className="muted">Cuando empiece un convenio con una ONG, aquí verás cuántas visitas más te trajo comparado con los días anteriores.</p>}</div>
+  </div>
+}
+
 // ---------- Suscripción ----------
-type Pago = { id: string; monto_clp: number; estado: string; canal: 'transferencia' | 'orcob' | 'mercadopago'; referencia: string | null; codigo_orcob: string | null }
+type Pago ={ id: string; monto_clp: number; estado: string; canal: 'transferencia' | 'orcob' | 'mercadopago'; referencia: string | null; codigo_orcob: string | null }
 type Periodo = { id: string; estado: string; inicio: string; fin: string; plan: string; plan_codigo: Plan['codigo']; precio_mensual_clp: number; pagos: Pago[] }
 const periodoTexto: Record<string, string> = { activa: 'Activa', pendiente: 'En revisión', vencida: 'Vencida', cancelada: 'Cancelada' }
 

@@ -124,6 +124,9 @@ async function paridad(guion) {
 }
 
 const idDe = (lista, campo, valor) => lista.find(x => x[campo] === valor).id
+// La franja horaria y la hora de más visitas dependen de la hora en que corre cada backend (los eventos de la prueba
+// llevan la hora actual): se comparan aparte, en kpis.test.mjs, con horas fijas.
+const sinHoras = ({ por_franja, hora_peak, ...m }) => ({ ...m, por_franja: por_franja.length, hora_peak: hora_peak === null })
 
 // ---------- Guiones ----------
 test('cuentas: login, registro, sesión y catálogos', async () => {
@@ -392,7 +395,7 @@ test('directorio y Pymes: perfil, consultas, catálogo, métricas, suscripción,
     await call('DELETE', `/pymes/${shop}/catalogo/${cama.id}`, undefined, 'tienda')
     await call('GET', `/pymes/${shop}/catalogo`, undefined, 'jefe')
 
-    for (const [id, quien] of [[shop, 'tienda'], [vet, 'veterinaria'], [pelu, 'peluqueria']]) await call('GET', `/pymes/${id}/metricas`, undefined, quien)
+    for (const [id, quien] of [[shop, 'tienda'], [vet, 'veterinaria'], [pelu, 'peluqueria']]) await call('GET', `/pymes/${id}/metricas`, undefined, quien, { comparar: sinHoras })
 
     // Suscripción: renovación por transferencia y pago por Orcob con su aviso.
     await call('GET', `/pymes/${shop}/suscripcion`, undefined, 'tienda')
@@ -758,7 +761,7 @@ test('suite: sucursales, equipo, publicidad, convenios y canjes, cobranza, cuent
     await call('GET', `/pymes/${vet}/convenios`, undefined, 'veterinaria')
     await call('POST', `/pymes/${vet}/convenios/${nuevoConvenio.id}/finalizar`, undefined, 'veterinaria')
     await call('POST', `/pymes/${vet}/convenios/${nuevoConvenio.id}/finalizar`, undefined, 'veterinaria')
-    await call('GET', `/pymes/${vet}/metricas`, undefined, 'veterinaria')
+    await call('GET', `/pymes/${vet}/metricas`, undefined, 'veterinaria', { comparar: sinHoras })
     await call('GET', `/ongs/${patitas}`)
     await call('GET', '/ongs')
     await call('GET', `/pymes/${vet}`)

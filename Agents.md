@@ -1127,3 +1127,23 @@ Cada entrada va al final del archivo, bajo el encabezado `## AAAA-MM-DD` de su d
   - `npm test`: 52 de 52. `mercadopago.test.mjs` (nuevo) usa un Mercado Pago simulado en `MP_API_URL` y comprueba la preferencia (monto, CLP, referencia, regreso, aviso y vencimiento), que el webhook ignora pagos pendientes, de otro monto o en otra moneda, la activación y su correo, el aviso repetido, el 409 del asesor, el reemplazo, la verificación al volver, el reintento, la confirmación de un pago anterior ya pagado y que sin token no se ofrece.
   - La paridad suma los pasos de Mercado Pago sin token, con las mismas respuestas en ambos backends.
   - En Chromium, con la build real contra el API real sobre PGlite y un Mercado Pago simulado que aprueba: elegir Plata y luego Oro, «Ir a pagar», volver a la app y ver la confirmación en Suscripción, a 1366 px en claro y a 390 px en oscuro. Sin errores de JavaScript ni desplazamiento horizontal.
+### KPI de negocio en Métricas y en el Inicio del administrador
+
+- Fecha: 2026-11-13.
+- Rama: `patricioampuero/kpi-negocio`, creada sobre `patricioampuero/pago-mercado-pago`. Se fusiona después de ella.
+- Archivos agregados: `src/shared/kpis.ts` y `src/shared/kpis.test.mjs`.
+- Archivos modificados: `backend/api/pymes.ts`, `backend/api/admin.ts`, `src/mock/server.ts`, `src/modules/business/business.tsx`, `src/modules/admin/admin.tsx`, `src/styles/design-pro.css`, `backend/api/paridad.test.mjs`, `package.json` y `Agents.md`.
+- Cambio realizado:
+  - **Métricas del negocio** (`GET /pymes/:id/metricas`) suma KPI orientados a decisiones:
+    - tasa de contacto: porcentaje de visitas que terminan en un clic para llamar o escribir por WhatsApp;
+    - visitas por franja horaria (madrugada, mañana, tarde y noche) y la hora con más visitas, en hora de Chile (desde el plan Plata);
+    - cupones más usados: canjes de cada código en los últimos 30 días;
+    - impacto de cada campaña con una ONG: visitas en los días siguientes al inicio del convenio comparadas con los mismos días anteriores (hasta 14), con su variación y sus canjes. Se miden las campañas activas o terminadas que empezaron hace menos de 90 días.
+  - **Inicio del administrador** (`GET /admin/resumen`, campo `kpis`): visitas a negocios, tasa de contacto y cupones canjeados de toda la plataforma en 30 días, más los negocios más visitados y las ONG con más canjes.
+  - Los cálculos están en `src/shared/kpis.ts`, que usan el mock y el API, así que ambos entregan las mismas cifras.
+- Motivo: en la revisión, el profesor dijo que los indicadores de la presentación (carga del QR, privacidad, disponibilidad) son SLA y no KPI, y pidió KPI de negocio en tarjetas: visitas por local, productos más vistos, franja horaria, códigos más usados y el impacto de las campañas con ONG, que son los aliados estratégicos.
+- Verificación ejecutada:
+  - `npx tsc -b` sin errores y `npm run build -- --base=/mockap-petsuite/` correcto.
+  - `npm test`: 57 de 57. `kpis.test.mjs` (nuevo) prueba con horas fijas la hora de Chile en verano e invierno, las franjas, la hora con más visitas, la tasa de contacto, el impacto de una campaña, el orden de los cupones y el ranking con empates.
+  - La paridad compara las métricas y el resumen en ambos backends. La franja horaria y la hora con más visitas se comparan solo por forma, porque dependen de la hora a la que corre cada backend.
+  - En Chromium, con la build real contra el API real sobre PGlite: Métricas de la veterinaria (Oro) y el Inicio del administrador, a 1366 px en claro y a 390 px en oscuro. Sin errores de JavaScript ni desplazamiento horizontal.

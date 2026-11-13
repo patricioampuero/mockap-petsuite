@@ -9,6 +9,7 @@ import { comunasDe, dayOffset, fail, fecha, hace, idDe, now, on, parse, uid, una
 import type { Sql } from './db'
 import { CONSULTAS_NO_DISPONIBLES } from '../../src/shared/fichas'
 import { documentosDe } from './documentos'
+import { DIAS_EVENTOS_CAMPANAS, kpisNegocio, type EventoKpi } from '../../src/shared/kpis'
 import { avisoSolicitud, correoSolicitudPlan, MERCADO_PAGO_NO_DISPONIBLE, ORCOB_NO_DISPONIBLE, PAGO_ANTERIOR_RECIBIDO, SOLO_ORCOB_CONFIRMA, type CanalPago } from '../../src/shared/pagos'
 import { crearPreferencia, mercadoPagoDisponible, verificarPagoMp } from './mercadopago'
 import {
@@ -302,7 +303,15 @@ on('GET', '/pymes/:id/metricas', async req => {
   const canjes30 = await req.sql<{ sucursal_id: string | null }>('select k.sucursal_id from canjes k join convenios c on c.id = k.convenio_id where c.pyme_id = $1 and k.ocurrido_en > $2', [p.id, desde])
   const items = (await req.sql(`select ${ITEM} from items_catalogo i where i.pyme_id = $1 and i.disponible order by i.creado_en`, [p.id])).map(itemDe)
   const sucursales = nivel === 'avanzadas' ? await req.sql<{ id: string; nombre: string }>('select id, nombre from sucursales where pyme_id = $1 order by creado_en', [p.id]) : []
+  // KPI de negocio (src/shared/kpis.ts): franja horaria, cupones más usados e impacto de las campañas con ONG.
+  const ultimos30 = eventos.filter(e => e.ocurrido_en > desde)
+  const visitasLargas = await req.sql<EventoKpi>("select tipo, ocurrido_en from eventos_pyme where pyme_id = $1 and tipo = 'visita_perfil' and ocurrido_en > $2 order by ocurrido_en, id", [p.id, hace(DIAS_EVENTOS_CAMPANAS)])
+  const convenios = await req.sql<{ id: string; codigo: string; titulo: string; estado: string; desde: string; ong: string }>(`select c.id, c.codigo, c.titulo, c.estado, c.desde, o.nombre as ong
+    from convenios c join ongs o on o.id = c.ong_id where c.pyme_id = $1 and c.estado <> 'rechazado' order by c.creado_en, c.id`, [p.id])
+  const canjes = await req.sql<{ convenio_id: string; ocurrido_en: string }>('select k.convenio_id, k.ocurrido_en from canjes k join convenios c on c.id = k.convenio_id where c.pyme_id = $1', [p.id])
+  const kpis = kpisNegocio(nivel, totales, ultimos30, visitasLargas, convenios, canjes, desde)
   return {
+    ...kpis,
     nivel,
     totales,
     anteriores,

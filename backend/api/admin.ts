@@ -4,6 +4,7 @@ import { DIAS_PERIODO, PLANES, PLAN_GRATIS, planPorId } from '../../src/modules/
 import { FICHA_PUBLICA_SIN_DUENO } from '../../src/shared/fichas'
 import { documentosFaltantes } from '../../src/shared/documentos'
 import { PAGO_LO_CONFIRMA_MP } from '../../src/shared/pagos'
+import { kpisPlataforma } from '../../src/shared/kpis'
 import { aprobarDocumentos, documentosDe } from './documentos'
 import { userSuspensionSchema } from '../../src/shared/validators'
 import { auth, cerrarSesiones, correoDe, enviarCorreo, levantarVencidas } from './auth'
@@ -42,8 +43,20 @@ on('GET', '/admin/resumen', async req => {
     banners_pendientes: c!.banners_pendientes, convenios_pendientes: c!.convenios_pendientes, perfiles_pendientes: c!.perfiles_pendientes, privacidad_pendientes: c!.privacidad_pendientes,
     usuarios: c!.usuarios, suspendidos: c!.suspendidos, pymes_activas: c!.pymes_activas, pymes_pendientes: c!.pymes_pendientes, reportes_abiertos: c!.reportes_abiertos,
     escaneos: c!.escaneos, ingresos_30d: c!.ingresos_30d, ong_pendientes: c!.ong_pendientes, animales_disponibles: c!.animales_disponibles,
+    kpis: await kpisDeLaPlataforma(req.sql, desde),
   }
 })
+
+// KPI de negocio de toda la plataforma en los últimos 30 días (src/shared/kpis.ts). Los conteos se agrupan en la base.
+async function kpisDeLaPlataforma(sql: Sql, desde: string) {
+  const totales = { visita_perfil: 0, vista_item: 0, clic_contacto: 0, clic_whatsapp: 0 }
+  for (const r of await sql<{ tipo: keyof typeof totales; n: number }>('select tipo, count(*)::int as n from eventos_pyme where ocurrido_en > $1 group by tipo', [desde])) totales[r.tipo] = r.n
+  const visitas = await sql<{ nombre: string; n: number }>(`select p.nombre_comercial as nombre, count(*)::int as n from eventos_pyme e join pymes p on p.id = e.pyme_id
+    where e.tipo = 'visita_perfil' and e.ocurrido_en > $1 group by p.nombre_comercial`, [desde])
+  const canjes = await sql<{ nombre: string; n: number }>(`select o.nombre, count(*)::int as n from canjes k join convenios c on c.id = k.convenio_id join ongs o on o.id = c.ong_id
+    where k.ocurrido_en > $1 group by o.nombre`, [desde])
+  return kpisPlataforma(totales, new Map(visitas.map(r => [r.nombre, r.n])), new Map(canjes.map(r => [r.nombre, r.n])))
+}
 
 // Suspensión vigente con la forma del mock: { tipo, dias, hasta, motivo, mensaje, aplicada_en } o null.
 const SUSPENSION = `(select json_build_object('tipo', s.tipo, 'dias', s.dias, 'hasta', s.hasta, 'motivo', s.motivo, 'mensaje', s.mensaje, 'aplicada_en', s.aplicada_en)

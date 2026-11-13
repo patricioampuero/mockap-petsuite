@@ -17,6 +17,7 @@ import { CONSULTAS_NO_DISPONIBLES, FICHA_PUBLICA_SIN_DUENO } from '../shared/fic
 import { desdeBase64, IMAGEN_AJENA, IMAGEN_INVALIDA, IMAGEN_PESADA, IMAGENES_AGOTADAS, MAX_IMAGENES_POR_USUARIO, revisarImagen } from '../shared/imagenes'
 import { limitesDe, mensajeDemasiados, STATUS_DEMASIADOS, sumaEvento, type Limite } from '../shared/limites'
 import { documentosFaltantes } from '../shared/documentos'
+import { DIAS_EVENTOS_CAMPANAS, kpisNegocio, kpisPlataforma } from '../shared/kpis'
 import { aprobarDocumentos, documentosDe, registerDocumentosRoutes } from './documentos'
 
 z.config(z.locales.es())
@@ -819,7 +820,14 @@ on('GET', '/pymes/:id/metricas', req => {
   }
   const conveniosIds = new Set(db.convenios.filter(c => c.pyme_id === p.id).map(c => c.id))
   const canjes30 = db.canjes.filter(c => conveniosIds.has(c.convenio_id) && c.ocurrido_en > desde)
+  // KPI de negocio (src/shared/kpis.ts): franja horaria, cupones más usados e impacto de las campañas con ONG.
+  const largo = hace(DIAS_EVENTOS_CAMPANAS)
+  const visitasLargas = db.eventos.filter(e => e.pyme_id === p.id && e.tipo === 'visita_perfil' && e.ocurrido_en > largo).sort((a, b) => a.ocurrido_en.localeCompare(b.ocurrido_en))
+  const convenios = db.convenios.filter(c => c.pyme_id === p.id && c.estado !== 'rechazado').sort((a, b) => a.creado_en.localeCompare(b.creado_en))
+    .map(c => ({ id: c.id, codigo: c.codigo, titulo: c.titulo, estado: c.estado, desde: c.desde, ong: db.ongs.find(o => o.id === c.ong_id)?.nombre ?? 'ONG' }))
+  const kpis = kpisNegocio(nivel, totales, eventos, visitasLargas, convenios, db.canjes.filter(k => conveniosIds.has(k.convenio_id)), desde)
   return {
+    ...kpis,
     nivel,
     totales,
     anteriores,
@@ -1248,8 +1256,27 @@ on('GET', '/admin/resumen', req => {
     ingresos_30d: db.pagos.filter(p => p.estado === 'confirmado' && p.pagado_en > desde).reduce((n, p) => n + p.monto_clp, 0),
     ong_pendientes: db.ongs.filter(o => o.estado_verificacion === 'pendiente').length,
     animales_disponibles: db.animales.filter(visible).length,
+    kpis: kpisDeLaPlataforma(desde),
   }
 })
+
+// KPI de negocio de toda la plataforma en los últimos 30 días (src/shared/kpis.ts).
+function kpisDeLaPlataforma(desde: string) {
+  const totales = { visita_perfil: 0, vista_item: 0, clic_contacto: 0, clic_whatsapp: 0 }
+  const visitas = new Map<string, number>(), canjes = new Map<string, number>()
+  for (const e of db.eventos) {
+    if (e.ocurrido_en <= desde) continue
+    totales[e.tipo]++
+    const p = e.tipo === 'visita_perfil' && db.pymes.find(x => x.id === e.pyme_id)
+    if (p) visitas.set(p.nombre_comercial, (visitas.get(p.nombre_comercial) ?? 0) + 1)
+  }
+  for (const k of db.canjes) {
+    if (k.ocurrido_en <= desde) continue
+    const ong = db.ongs.find(o => o.id === db.convenios.find(c => c.id === k.convenio_id)?.ong_id)?.nombre
+    if (ong) canjes.set(ong, (canjes.get(ong) ?? 0) + 1)
+  }
+  return kpisPlataforma(totales, visitas, canjes)
+}
 
 on('GET', '/admin/usuarios', req => {
   auth(req, 'admin')
