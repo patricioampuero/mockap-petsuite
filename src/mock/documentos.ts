@@ -5,7 +5,7 @@ import type { Session } from '../shared/api'
 import type { ModuloPyme, Rol } from '../shared/permissions'
 import {
   avisoDocumentosCompletos, correoDocumentoRechazado, DOCUMENTO_INVALIDO, DOCUMENTO_NO_ENCONTRADO, DOCUMENTO_PESADO, DOCUMENTO_SIN_ARCHIVO_DEMO,
-  DOCUMENTOS, MAX_BYTES_DOCUMENTO_DEMO, nombreArchivo, revisarDocumento, TIPOS_ARCHIVO, TIPOS_DOCUMENTO, vistaDocumentos, type ArchivoDocumento, type TipoDocumento,
+  DOCUMENTOS, MAX_BYTES_DOCUMENTO_DEMO, nombreArchivo, revisarDocumento, SOLO_DUENO_DOCUMENTOS, TIPOS_ARCHIVO, TIPOS_DOCUMENTO, vistaDocumentos, type ArchivoDocumento, type TipoDocumento,
 } from '../shared/documentos'
 import { desdeBase64 } from '../shared/imagenes'
 import { db, now, uid, type DocumentoPyme, type Pyme, type Usuario } from './db'
@@ -35,13 +35,18 @@ export function registerDocumentosRoutes({ on, auth, parse, fail, miPyme }: Ctx)
     // El cuerpo HTTP ya limita a 3 MB; el tamaño real del archivo lo revisa revisarDocumento (413).
   datos: z.string().max(3_000_000, DOCUMENTO_PESADO),
   })
+  const delDueno = (req: Req) => {
+    const p = miPyme(req, 'perfil'), u = auth(req)
+    if (p.propietario_id !== u.id) fail(403, SOLO_DUENO_DOCUMENTOS)
+    return { p, u }
+  }
   const binario = (d: DocumentoPyme) => d.datos ? { __binario: true, privado: true, tipo: d.mime, base64: d.datos, nombre: d.nombre } : fail(404, DOCUMENTO_SIN_ARCHIVO_DEMO)
 
-  on('GET', '/pymes/:id/documentos', req => documentosDe(miPyme(req, 'perfil')))
+  on('GET', '/pymes/:id/documentos', req => documentosDe(delDueno(req).p))
 
   // Un documento por tipo: subir otro reemplaza al anterior y vuelve a revisión.
   on('PUT', '/pymes/:id/documentos/:tipo', req => {
-    const p = miPyme(req, 'perfil'), u = auth(req)
+    const { p, u } = delDueno(req)
     const tipo = req.params.tipo as TipoDocumento
     if (!TIPOS_DOCUMENTO.includes(tipo)) return fail(404, DOCUMENTO_NO_ENCONTRADO)
     const d = parse(subida, req.body)
@@ -66,7 +71,7 @@ export function registerDocumentosRoutes({ on, auth, parse, fail, miPyme }: Ctx)
   })
 
   on('GET', '/pymes/:id/documentos/:docId/archivo', req => {
-    const p = miPyme(req, 'perfil')
+    const { p } = delDueno(req)
     const d = db.documentos.find(x => x.id === req.params.docId && x.pyme_id === p.id)
     return d ? binario(d) : fail(404, DOCUMENTO_NO_ENCONTRADO)
   })

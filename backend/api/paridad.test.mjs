@@ -182,6 +182,19 @@ test('cuentas: login, registro, sesión y catálogos', async () => {
     await call.login('nueva', 'nueva@petsuite.cl', 'nuevaClave123')
     await call('GET', '/auth/yo', undefined, 'nueva')
 
+    // Perfil desde Configuración: nombre y comuna se guardan; la contraseña se cambia con la actual y cierra las sesiones.
+    await call('PATCH', '/auth/yo', { nombre_visible: 'Nueva Tutora Soto', comuna_id: 3 }, 'nueva')
+    await call('PATCH', '/auth/yo', { comuna_id: 99 }, 'nueva')
+    await call('PATCH', '/auth/yo', { nombre_visible: 'x' }, 'nueva')
+    await call('PATCH', '/auth/yo', { nombre_visible: 'Alguien' })
+    await call('POST', '/auth/cambiar-clave', { actual: 'incorrecta', nueva: 'otraClave123' }, 'nueva')
+    await call('POST', '/auth/cambiar-clave', { actual: 'nuevaClave123', nueva: 'nuevaClave123' }, 'nueva')
+    await call('POST', '/auth/cambiar-clave', { actual: 'nuevaClave123', nueva: 'corta' }, 'nueva')
+    await call('POST', '/auth/cambiar-clave', { actual: 'nuevaClave123', nueva: 'otraClave123' }, 'nueva')
+    await call('GET', '/auth/yo', undefined, 'nueva')
+    await call.login('nueva', 'nueva@petsuite.cl', 'otraClave123')
+    await call('GET', '/auth/yo', undefined, 'nueva')
+
     // Límites de solicitudes: tras 5 contraseñas incorrectas, esa cuenta queda bloqueada 15 minutos desde ese
     // cliente, aunque la sexta sea correcta; las demás cuentas siguen entrando.
     for (let i = 0; i < 5; i++) await call.login('nadie', 'jefe@petsuite.cl', `incorrecta-${i}`)
@@ -442,6 +455,8 @@ test('directorio y Pymes: perfil, consultas, catálogo, métricas, suscripción,
     const doc = (tipo, nombre, mime, datos, quien = 'nueva') => call('PUT', `/pymes/${gateria.id}/documentos/${tipo}`, { nombre, mime, datos }, quien)
     await doc('patente_comercial', 'patente.pdf', 'application/pdf', PDF, 'tutor')
     await doc('patente_comercial', 'patente.pdf', 'application/pdf', PDF, 'tienda')
+    await call('GET', `/pymes/${shop}/documentos`, undefined, 'jefe')
+    await call('PUT', `/pymes/${shop}/documentos/patente_comercial`, { nombre: 'patente.pdf', mime: 'application/pdf', datos: PDF }, 'jefe')
     await doc('otro', 'patente.pdf', 'application/pdf', PDF)
     await doc('patente_comercial', 'patente.pdf', 'application/pdf', JPEG)
     await doc('patente_comercial', 'patente.txt', 'text/plain', PDF)

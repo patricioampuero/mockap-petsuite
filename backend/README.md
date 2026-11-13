@@ -101,6 +101,25 @@ Con proveedor configurado, la bandeja de correos que ven el asesor y el administ
 
 Con un dominio propio, fija `APP_URL` con ese dominio y redirige `<proyecto>.vercel.app` hacia él en **Settings → Domains**. El API acepta solicitudes desde `APP_URL`, el dominio de producción del proyecto y la vista previa en curso. Si hace falta otro origen, agrégalo en `PETSUITE_CORS_ORIGINS`.
 
+### Datos de demostración en la versión real
+
+Para presentar PetSuite en www.petsuite.space sin crear cuentas a mano, `backend/db/demo-presentacion.mjs` carga los datos de la demo (los mismos de GitHub Pages) junto a los reales, y después los quita.
+
+```bash
+# 1. Simulación: muestra qué cargaría, sin escribir nada
+node --env-file=.env.production.local backend/db/demo-presentacion.mjs --clave "una-clave-larga-2026"
+# 2. Cargar
+node --env-file=.env.production.local backend/db/demo-presentacion.mjs --clave "una-clave-larga-2026" --aplicar
+# 3. Después de la presentación: quitar todo lo cargado (primero sin --aplicar para revisar)
+node --env-file=.env.production.local backend/db/demo-presentacion.mjs --quitar --aplicar
+```
+
+- Todas las cuentas terminan en `@demo.petsuite.space` y usan la clave que indicas (10 caracteres o más). El API no les envía correos reales: quedan en la bandeja.
+- Cuentas: `tutor@` (Luna con su medalla QR), `tutor2@`, `veterinaria@` (Oro), `clinico@`, `tienda@` (Plata), `jefe@`, `peluqueria@` (bajó a Gratis), `ong@` (Patitas del Sur), `ong2@` y `nuevo@`, un negocio en verificación sin documentos para mostrar la subida y la revisión.
+- No crea administradores ni asesores, porque tendrían acceso a los datos reales. La revisión de documentos y pagos se hace con la cuenta real del administrador.
+- Los negocios y las ONG llevan «(demo)» en el nombre, porque se ven en Explorar. Quítalos al terminar.
+- `--quitar` borra las cuentas del dominio de demostración y todo lo que depende de ellas (también lo que hicieron durante la presentación), siguiendo las claves foráneas. Nunca toca otras cuentas.
+
 ### Pagos con Mercado Pago
 
 Los planes se pagan con Mercado Pago (Checkout Pro) cuando el API tiene `MP_ACCESS_TOKEN`. Sin esa variable, la app solo ofrece transferencia.

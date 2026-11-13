@@ -1,5 +1,18 @@
 // Reglas compartidas de las cuentas reales: confirmación de correo, recuperación de contraseña e invitaciones.
 // Las usan el mock, el API con PostgreSQL y el frontend, para que plazos, mensajes y correos no se desalineen.
+import { z } from 'zod'
+
+/** Cambios del perfil desde Configuración: nombre visible y comuna (el correo no se cambia ahí). */
+export const perfilSchema = z.object({
+  nombre_visible: z.string().trim().min(2, 'Ingresa tu nombre').max(80).optional(),
+  comuna_id: z.number().int().positive().optional(),
+})
+/** Cambio de contraseña con la actual, desde Configuración. */
+export const cambiarClaveSchema = z.object({
+  actual: z.string().min(1, 'Ingresa tu contraseña actual').max(72),
+  nueva: z.string().min(8, 'La contraseña nueva debe tener al menos 8 caracteres').max(72),
+}).refine(d => d.actual !== d.nueva, { message: 'La contraseña nueva debe ser distinta de la actual', path: ['nueva'] })
+export const CLAVE_ACTUAL_INCORRECTA = 'La contraseña actual no es correcta'
 
 /** 403 al ingresar con la clave correcta y el correo sin confirmar. El frontend lo reconoce para ofrecer el reenvío. */
 export const CORREO_SIN_CONFIRMAR = 'Confirma tu correo para ingresar. Revisa tu bandeja de entrada o pide un nuevo enlace.'

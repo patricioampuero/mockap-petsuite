@@ -91,7 +91,12 @@ export const businessProfileSchema = z.object({
   servicios: z.array(z.string().trim().min(2, 'Cada servicio debe tener al menos 2 caracteres').max(40, 'Cada servicio admite hasta 40 caracteres')).max(12, 'Puedes destacar hasta 12 servicios').default([]),
   latitud: z.number().min(-90).max(90).nullable(),
   longitud: z.number().min(-180).max(180).nullable(),
-  foto_portada: z.enum(['/img/vet-2.jpg', '/img/collares.jpg', '/img/groomer-2.jpg', '/img/accesorios.jpg']).nullable(),
+  // Una foto de muestra o una subida por el negocio (/api/v1/imagenes/<id> en el API; data: URL en la demo).
+  foto_portada: z.union([
+    z.enum(['/img/vet-2.jpg', '/img/collares.jpg', '/img/groomer-2.jpg', '/img/accesorios.jpg']),
+    z.string().regex(/^\/api\/v1\/imagenes\/[0-9a-f-]{36}$/),
+    z.string().max(900_000).regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/),
+  ], { message: 'Portada no válida' }).nullable(),
 }).refine(data => (data.latitud === null) === (data.longitud === null), 'Indica latitud y longitud juntas')
 
 export const businessContactSchema = z.object({

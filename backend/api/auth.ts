@@ -2,6 +2,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import { ENLACE_INVALIDO, VIGENCIA_HORAS, enlaceCuenta, type TipoToken } from '../../src/shared/cuentas'
+import { esCorreoDemo } from '../../src/shared/demo'
 import { PERMISOS_ADMIN, PERMISOS_ASESOR, PERMISOS_DUENO, type Rol } from '../../src/shared/permissions'
 import { fail, now, uid, una, type Req } from './core'
 import type { Sql } from './db'
@@ -96,7 +97,8 @@ export async function enviarCorreo(sql: Sql, para: string, asunto: string, cuerp
   { obligatorio = !!privado, oculto = OCULTO }: { obligatorio?: boolean; oculto?: string } = {}) {
   if (!para) return
   const clave = process.env.RESEND_API_KEY, remitente = process.env.MAIL_FROM
-  const real = !!(clave && remitente)
+  // Las cuentas de demostración (@demo.petsuite.space) no tienen buzón: su correo queda solo en la bandeja.
+  const real = !!(clave && remitente) && !esCorreoDemo(para)
   await sql('insert into correos (id, para, asunto, cuerpo, tipo, enviado_en) values ($1, $2, $3, $4, $5, $6)', [uid(), para, asunto, real && privado ? cuerpo.split(privado).join(oculto) : cuerpo, tipo, now()])
   if (real && !(await enviarPorResend(clave, remitente, para, asunto, cuerpo)) && obligatorio) {
     // Sin el correo, la persona quedaría esperando un enlace que nunca llega: la solicitud falla y se deshace.

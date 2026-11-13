@@ -18,7 +18,7 @@ const REFERENCIA = ['comunas', 'planes', 'schema_migrations']
 const RONDAS_BCRYPT = 10
 
 /** Genera la demo en memoria con el seed del mock, sin tocar el almacenamiento del navegador. */
-async function datosDemo() {
+export async function datosDemo() {
   const values = new Map()
   globalThis.localStorage ??= { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }
   const mock = await import('../../src/mock/db.ts')
@@ -27,7 +27,7 @@ async function datosDemo() {
 }
 
 /** Traduce cada colección del mock a las filas de su tabla, en orden de dependencias. */
-async function filas(db) {
+export async function filas(db) {
   const usuarios = await Promise.all(db.usuarios.map(async u => ({
     id: u.id, correo: u.correo, clave_hash: await bcrypt.hash(u.clave, RONDAS_BCRYPT), rol: u.rol, nombre_visible: u.nombre_visible,
     comuna_id: u.comuna_id, estado: u.estado, bloqueo_tratamiento: u.bloqueo_tratamiento ?? false, creado_en: u.creado_en,
@@ -74,7 +74,7 @@ async function filas(db) {
 }
 
 // Inserta por lotes. Un campo del mock sin columna en la tabla hace fallar la carga: así se nota si el modelo se desalinea.
-async function insertar(client, tabla, datos) {
+export async function insertar(client, tabla, datos) {
   const columnas = [...new Set(datos.flatMap(Object.keys))]
   for (let i = 0; i < datos.length; i += 200) {
     const params = []

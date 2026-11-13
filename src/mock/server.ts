@@ -11,7 +11,7 @@ import { PERMISOS_ADMIN, PERMISOS_ASESOR, PERMISOS_DUENO, type ModuloPyme } from
 import { crearCobro } from './orcob'
 import { avisarAsesores, baseApp, emitirToken, enviarCorreo, registerSuiteRoutes, segundosDesdeEnvio, usarToken } from './suite'
 import { avisoSolicitud, correoSolicitudPlan, MERCADO_PAGO_NO_DISPONIBLE, PAGO_LO_CONFIRMA_MP } from '../shared/pagos'
-import { CORREO_SIN_CONFIRMAR, SEGUNDOS_ENTRE_ENVIOS, correoRestablecer, correoVerificacion } from '../shared/cuentas'
+import { CLAVE_ACTUAL_INCORRECTA, CORREO_SIN_CONFIRMAR, SEGUNDOS_ENTRE_ENVIOS, cambiarClaveSchema, correoRestablecer, correoVerificacion, perfilSchema } from '../shared/cuentas'
 import { correoAvisoQr } from '../shared/avisos'
 import { CONSULTAS_NO_DISPONIBLES, FICHA_PUBLICA_SIN_DUENO } from '../shared/fichas'
 import { desdeBase64, IMAGEN_AJENA, IMAGEN_INVALIDA, IMAGEN_PESADA, IMAGENES_AGOTADAS, MAX_IMAGENES_POR_USUARIO, revisarImagen } from '../shared/imagenes'
@@ -275,6 +275,26 @@ on('POST', '/auth/restablecer', req => {
 })
 
 on('GET', '/auth/yo', req => { const u = auth(req); return { id: u.id, rol: u.rol, nombre_visible: u.nombre_visible, correo: u.correo, comuna_id: u.comuna_id, permisos: permisosDe(u) } })
+
+// Perfil: el nombre visible y la comuna. El correo no se cambia aquí: identifica la cuenta y está confirmado.
+on('PATCH', '/auth/yo', req => {
+  const u = auth(req)
+  const d = parse(perfilSchema, req.body)
+  if (d.comuna_id !== undefined && !db.comunas.some(c => c.id === d.comuna_id)) return fail(400, 'Comuna no válida')
+  if (d.nombre_visible !== undefined) u.nombre_visible = d.nombre_visible
+  if (d.comuna_id !== undefined) u.comuna_id = d.comuna_id
+  return { id: u.id, rol: u.rol, nombre_visible: u.nombre_visible, correo: u.correo, comuna_id: u.comuna_id, permisos: permisosDe(u) }
+})
+
+// Cambiar la contraseña con la actual. Cierra todas las sesiones, igual que restablecerla con un enlace.
+on('POST', '/auth/cambiar-clave', req => {
+  const u = auth(req)
+  const d = parse(cambiarClaveSchema, req.body)
+  if (u.clave !== d.actual) return fail(403, CLAVE_ACTUAL_INCORRECTA)
+  u.clave = d.nueva
+  for (const [token, id] of Object.entries(db.sesiones)) if (id === u.id) delete db.sesiones[token]
+  return { ok: true }
+})
 on('GET', '/comunas', () => [...db.comunas].sort((a, b) => a.nombre.localeCompare(b.nombre)))
 on('GET', '/planes', () => PLANES)
 

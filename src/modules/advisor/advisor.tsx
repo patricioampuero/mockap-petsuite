@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Mail, Send, ShieldCheck, X } from 'lucide-react'
-import { api, clp, errorText, fechaLarga, type Comuna } from '../../shared/api'
+import { api, clp, errorText, fechaLarga, modoDemo, type Comuna } from '../../shared/api'
 import { DIAS_DERIVAR_COBRANZA, DIAS_GRACIA } from '../plans/plans'
 import type { OngPerfil } from '../ong/ong-profile'
 import { EmptyState, ErrorState, LoadingState } from '../../shared/feedback'
@@ -100,7 +100,7 @@ export function SentEmails() {
   const [error, setError] = useState('')
   const load = useCallback(() => api<Correo[]>('/admin/correos').then(value => { setRows(value); setError('') }).catch(e => setError(errorText(e))), [])
   useEffect(() => { void load() }, [load])
-  return <section className="page admin-page"><div className="page-title"><div><p className="eyebrow">COMUNICACIONES</p><h1>Correos enviados</h1><p className="muted">Registro de los correos transaccionales: creación de cuentas, aprobaciones, convenios, cobranza y privacidad. En esta demo no salen a internet.</p></div></div>
+  return <section className="page admin-page"><div className="page-title"><div><p className="eyebrow">COMUNICACIONES</p><h1>Correos enviados</h1><p className="muted">Registro de los correos transaccionales: creación de cuentas, aprobaciones, convenios, cobranza y privacidad. {modoDemo ? 'En esta demo no salen a internet.' : 'Los enlaces de acceso no se guardan aquí: solo llegan a cada destinatario.'}</p></div></div>
     {error && !rows && <ErrorState message={error} onRetry={() => void load()} />}{error && rows && <p className="form-error" role="alert">{error}</p>}{rows ? <MailList rows={rows} showTo onRefresh={() => void load()} /> : !error && <LoadingState label="Cargando correos" />}</section>
 }
 

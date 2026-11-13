@@ -58,10 +58,13 @@ export const DIAS_DERIVAR_COBRANZA = 30
 export const DIAS_PERIODO = 30
 
 export const limiteTexto = (n: number | null) => n === null ? 'Sin límite' : n === 0 ? 'No incluye' : String(n)
+/** Frase del cupo de un plan: «incluye 3 banners activos», «no incluye cuentas de equipo» o «incluye convenios sin límite». */
+export const cupoTexto = (n: number | null, singular: string, plural: string) => n === null ? `incluye ${plural} sin límite` : n === 0 ? `no incluye ${plural}` : `incluye ${n} ${n === 1 ? singular : plural}`
 export const dentroDelLimite = (usados: number, limite: number | null) => limite === null || usados < limite
 
 export const etiquetasLimite: Record<keyof Limites, string> = {
   items: 'Ítems de catálogo', sucursales: 'Sucursales', usuarios: 'Cuentas de equipo', ofertas: 'Ofertas vigentes', banners: 'Banners publicitarios', convenios: 'Convenios con ONG',
 }
 export const metricasTexto: Record<Beneficios['metricas'], string> = { basicas: 'Visitas y contactos', completas: 'Más canales e ítems más vistos', avanzadas: 'Comparativos y sucursales' }
-export const destacadoTexto = ['Orden alfabético', 'Prioridad en resultados', 'Primero y con insignia «Destacado»'] as const
+// El orden de Explorar es igual para todos: el plan solo decide el bloque aparte «Patrocinado».
+export const destacadoTexto = ['Orden igual para todos', 'Bloque «Patrocinado»', 'Primero en «Patrocinado»'] as const
